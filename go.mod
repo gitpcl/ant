@@ -2,6 +2,8 @@ module github.com/gitpcl/ant
 
 go 1.25.0
 
+toolchain go1.26.1
+
 require (
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/spf13/cobra v1.10.2
