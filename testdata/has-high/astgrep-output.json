@@ -1,0 +1,18 @@
+[
+  {
+    "text": "row := queryOne(id)",
+    "range": {
+      "byteOffset": { "start": 0, "end": 19 },
+      "start": { "line": 9, "column": 2 },
+      "end": { "line": 9, "column": 21 }
+    },
+    "file": "main.go",
+    "lines": "\t\trow := queryOne(id)",
+    "charCount": { "leading": 2, "trailing": 0 },
+    "language": "Go",
+    "ruleId": "n+1-query",
+    "severity": "error",
+    "message": "Query issued inside a loop (1+N query pattern)",
+    "metaVariables": { "single": {}, "multi": {}, "transformed": {} }
+  }
+]

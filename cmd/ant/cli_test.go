@@ -53,7 +53,7 @@ func TestSpeciesHelpListsChildren(t *testing.T) {
 }
 
 func TestStubCommandsReturnCleanly(t *testing.T) {
-	for _, cmd := range []string{"fix", "review", "apply", "init"} {
+	for _, cmd := range []string{"fix", "review", "apply"} {
 		out, code := runCmd(t, cmd)
 		if code != engine.ExitOK {
 			t.Errorf("%s exit = %d, want 0 (clean stub)", cmd, code)

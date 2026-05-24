@@ -1,0 +1,19 @@
+# Sample ant.toml for the config parser tests (TECHSPEC §9). Mirrors the spec
+# example exactly so the schema test asserts each documented field is read.
+
+[colony]
+concurrency = 6              # default: NumCPU
+fixer       = "pi"           # default fixer adapter
+model       = "qwen2.5-coder"
+
+[ignore]
+paths = ["vendor/", "node_modules/", "*_generated.go"]
+
+[species.unused-import]
+auto_apply = true
+
+[species."n+1-query"]
+auto_apply = false
+
+[species.ai-slop]
+enabled = false

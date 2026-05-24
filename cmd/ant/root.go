@@ -85,7 +85,7 @@ func newRootCmd() *cobra.Command {
 		leaf("fix [path]", "Produce verified staged diffs (apply only with --apply)"),
 		leaf("review", "Walk staged diffs: accept/skip/diff/explain/next/quit"),
 		leaf("apply", "Land accepted staged diffs, on a branch by default"),
-		leaf("init", "Scaffold an ant.toml config file"),
+		newInitCmd(),
 		speciesCmd(),
 	)
 	return root

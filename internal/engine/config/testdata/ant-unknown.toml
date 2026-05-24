@@ -1,0 +1,12 @@
+# A config with typos / unknown keys. The loader must surface these as warnings
+# (not silently drop, not hard-fail) while still reading the recognized keys.
+
+[colony]
+concurrency = 4
+fixxer      = "pi"           # typo: should be "fixer" → unknown-key warning
+
+[bogus]                       # whole unknown section → unknown-key warning
+value = 1
+
+[species.unused-import]
+auto_apply = true

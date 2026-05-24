@@ -4,10 +4,10 @@ import (
 	"fmt"
 
 	"github.com/gitpcl/ant/internal/engine"
+	"github.com/gitpcl/ant/internal/engine/config"
 	"github.com/gitpcl/ant/internal/engine/detect"
 	"github.com/gitpcl/ant/internal/engine/scout"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 // newScoutCmd builds `ant scout [path] [--ant ...] [--severity ...] [--detail]`
@@ -35,7 +35,14 @@ func newScoutCmd() *cobra.Command {
 // concurrency), and applies the --fail-on CI gate. No business logic lives here
 // — composition and rendering selection only.
 func runScout(cmd *cobra.Command, args []string) error {
-	v := configFor(cmd)
+	// Load ant.toml through the engine's config layer so unknown keys surface as
+	// warnings (TECHSPEC §9) and precedence stays owned by one authority. scout
+	// itself consumes no [colony] knob yet (fixer/model/concurrency feed `ant
+	// fix`, a later sprint), but loading here means a malformed config fails fast
+	// (exit 2) and a typo is reported on every run, not silently ignored.
+	if err := surfaceConfigWarnings(cmd); err != nil {
+		return err // malformed ant.toml → operational (exit 2)
+	}
 
 	path := "."
 	if len(args) > 0 && args[0] != "" {
@@ -43,7 +50,7 @@ func runScout(cmd *cobra.Command, args []string) error {
 	}
 
 	format := scout.FormatHuman
-	if v.GetBool("json") {
+	if boolFlag(cmd, "json") {
 		format = scout.FormatJSON
 	}
 
@@ -70,7 +77,7 @@ func runScout(cmd *cobra.Command, args []string) error {
 		AntFilter:      scope.Species,
 	}
 
-	result, err := scout.Drive(cmd.Context(), cmd.OutOrStdout(), format, v.GetBool("detail"), opts)
+	result, err := scout.Drive(cmd.Context(), cmd.OutOrStdout(), format, boolFlag(cmd, "detail"), opts)
 	if err != nil {
 		return err // operational error → engine.ExitCode classifies it (exit 2)
 	}
@@ -98,17 +105,20 @@ func applyFailOn(threshold engine.Severity, result scout.Result) error {
 	return nil
 }
 
-// parseOptionalSeverity reads a severity-valued flag. An empty value means "not
-// set" (SeverityUnknown). A non-empty invalid value is an operational error
-// (bad input → exit 2) wrapped so it classifies correctly.
+// parseOptionalSeverity reads a severity-valued flag directly from cobra. An
+// empty value means "not set" (SeverityUnknown). A non-empty invalid value is an
+// operational error (bad input → exit 2) wrapped so it classifies correctly.
+// These flags (--severity, --fail-on) are CLI-only — they never appear in
+// ant.toml (TECHSPEC §9) — so they are read straight from the flag, not through
+// the config precedence chain.
 func parseOptionalSeverity(cmd *cobra.Command, flag string) (engine.Severity, error) {
-	raw := configFor(cmd).GetString(flag)
-	if raw == "" {
+	raw, err := cmd.Flags().GetString(flag)
+	if err != nil || raw == "" {
 		return engine.SeverityUnknown, nil
 	}
-	sev, err := engine.ParseSeverity(raw)
-	if err != nil {
-		return engine.SeverityUnknown, fmt.Errorf("%w: --%s: %v", engine.ErrOperational, flag, err)
+	sev, perr := engine.ParseSeverity(raw)
+	if perr != nil {
+		return engine.SeverityUnknown, fmt.Errorf("%w: --%s: %v", engine.ErrOperational, flag, perr)
 	}
 	return sev, nil
 }
@@ -122,30 +132,38 @@ func stringSlice(cmd *cobra.Command, flag string) []string {
 	return vals
 }
 
-// configFor builds a viper instance layering flags over ant.toml over defaults
-// (TECHSPEC §9 resolution order). Flags bound here take precedence; ant.toml is
-// read when present (zero-config works because a missing file is not an error).
-// A fuller resolution chain (species manifest layer) lands in the config sprint;
-// this wiring establishes the flags > ant.toml > defaults precedence the
-// command surface depends on now.
-func configFor(cmd *cobra.Command) *viper.Viper {
-	v := viper.New()
-	// Bind every flag the command exposes (local + inherited persistent) so
-	// flag values win over file/default values.
-	_ = v.BindPFlags(cmd.Flags())
+// boolFlag reads a boolean flag, returning false when unset or unreadable.
+func boolFlag(cmd *cobra.Command, flag string) bool {
+	val, err := cmd.Flags().GetBool(flag)
+	if err != nil {
+		return false
+	}
+	return val
+}
 
-	configPath := ""
-	if f := cmd.Flags().Lookup("config"); f != nil {
-		configPath = f.Value.String()
+// surfaceConfigWarnings loads ant.toml through the engine's config layer and
+// prints any unknown-key warnings to stderr (TECHSPEC §9: unknown keys are
+// warned, never silently ignored). It returns an operational error (exit 2) for
+// a malformed file. The CLI does no precedence logic itself — the engine's
+// config package owns the loader and (for `ant fix`, later) the resolver; this
+// only relays warnings and the typed error to the centralized exit-code handler.
+func surfaceConfigWarnings(cmd *cobra.Command) error {
+	configPath := configPathFlag(cmd)
+	_, warnings, _, err := config.LoadStrict(configFileOrDefault(configPath))
+	if err != nil {
+		return err
 	}
-	if configPath != "" {
-		v.SetConfigFile(configPath)
-	} else {
-		v.SetConfigName("ant")
-		v.SetConfigType("toml")
-		v.AddConfigPath(".")
+	for _, w := range warnings {
+		fmt.Fprintln(cmd.ErrOrStderr(), "ant: warning:", w)
 	}
-	// A missing config file is fine — bare `ant` must work zero-config.
-	_ = v.ReadInConfig()
-	return v
+	return nil
+}
+
+// configFileOrDefault returns the explicit --config path, or the conventional
+// ant.toml in the working directory when none was given.
+func configFileOrDefault(path string) string {
+	if path != "" {
+		return path
+	}
+	return config.DefaultConfigName
 }
