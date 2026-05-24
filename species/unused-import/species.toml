@@ -1,0 +1,17 @@
+name        = "unused-import"
+description = "Removes imports that are never referenced in the file"
+severity    = "low"
+languages   = ["go", "ts"]
+auto_apply  = true
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind      = "deterministic"
+transform = "delete-match"
+
+[verify]
+checks = ["compile", "detector-clears"]

@@ -1,0 +1,4 @@
+id: unknown-detector-kind
+language: go
+rule:
+  pattern: $X

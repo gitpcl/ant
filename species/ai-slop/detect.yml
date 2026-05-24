@@ -1,0 +1,9 @@
+# Built-in detector rule for the ai-slop species (placeholder).
+# ai-slop is a fuzzy classifier; the real detection (ast-grep heuristics or a
+# command escape hatch) is the author's call in the M4 species-builtin sprint.
+# This placeholder keeps the manifest valid and the embedded species
+# discoverable. The species ships disabled (enabled=false).
+id: ai-slop
+language: go
+rule:
+  pattern: "// TODO: $$$"

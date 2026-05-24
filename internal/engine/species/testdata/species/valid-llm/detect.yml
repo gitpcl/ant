@@ -1,0 +1,5 @@
+# Minimal ast-grep rule stub for the n+1-query fixture species.
+id: n+1-query
+language: go
+rule:
+  pattern: for $_ { $DB.Query($$$) }

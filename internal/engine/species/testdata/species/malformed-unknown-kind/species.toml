@@ -1,0 +1,14 @@
+name        = "unknown-detector-kind"
+description = "Uses a detector kind the registry does not know — must be rejected"
+severity    = "low"
+
+[detector]
+kind = "semgrep-xyz"
+rule = "detect.yml"
+
+[fix]
+kind      = "deterministic"
+transform = "delete-match"
+
+[verify]
+checks = ["compile"]

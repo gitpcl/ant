@@ -1,0 +1,14 @@
+name        = "missing-rule"
+description = "References a detect.yml that does not exist — must be rejected"
+severity    = "low"
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind      = "deterministic"
+transform = "delete-match"
+
+[verify]
+checks = ["compile"]

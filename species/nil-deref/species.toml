@@ -1,0 +1,17 @@
+name        = "nil-deref"
+description = "Detects potential nil/null pointer dereferences"
+severity    = "high"
+languages   = ["go", "ts"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+[verify]
+checks = ["compile", "tests:affected", "detector-clears"]

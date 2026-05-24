@@ -1,0 +1,4 @@
+id: broken-llm
+language: go
+rule:
+  pattern: $X

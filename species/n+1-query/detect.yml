@@ -1,0 +1,6 @@
+# Built-in detector rule for the n+1-query species (placeholder).
+# Real rule body lands in the M3 species-builtin sprint.
+id: n+1-query
+language: go
+rule:
+  pattern: for $_ := range $_ { $$$ }

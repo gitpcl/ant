@@ -1,0 +1,7 @@
+# Minimal ast-grep rule stub for the unused-import fixture species.
+# Real rule bodies are authored in the M2 species-builtin sprint; this only
+# needs to exist so the loader's "referenced files must exist" check passes.
+id: unused-import
+language: go
+rule:
+  pattern: import "$PKG"

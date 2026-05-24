@@ -1,0 +1,6 @@
+# Built-in detector rule for the missing-await species (placeholder).
+# Real rule body lands in the M3 species-builtin sprint.
+id: missing-await
+language: typescript
+rule:
+  pattern: $OBJ.$METHOD($$$)

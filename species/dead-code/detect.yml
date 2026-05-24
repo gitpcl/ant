@@ -1,0 +1,7 @@
+# Built-in detector rule for the dead-code species (placeholder).
+# Real rule body lands in the M2 species-builtin sprint. Minimal-but-valid for
+# Sprint 004 so the manifest loads from the embedded tree.
+id: dead-code
+language: go
+rule:
+  pattern: if false { $$$ }

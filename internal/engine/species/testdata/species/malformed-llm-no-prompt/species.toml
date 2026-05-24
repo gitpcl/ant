@@ -1,0 +1,14 @@
+name        = "broken-llm"
+description = "An llm fix with no prompt — must be rejected"
+severity    = "medium"
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind = "llm"
+# prompt deliberately omitted — invalid for kind=llm
+
+[verify]
+checks = ["compile"]

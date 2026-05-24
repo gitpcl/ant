@@ -1,0 +1,10 @@
+# Built-in detector rule for the unused-import species (placeholder).
+#
+# The real ast-grep rule body is authored in the M2 species-builtin sprint
+# (TODO.json: "Build the unused-import built-in species"). For Sprint 004 this
+# only needs to be a valid, present file so the manifest loads and the embedded
+# species is discoverable; the rule itself is intentionally minimal.
+id: unused-import
+language: go
+rule:
+  pattern: import "$PKG"

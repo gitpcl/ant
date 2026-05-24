@@ -1,0 +1,6 @@
+# Built-in detector rule for the nil-deref species (placeholder).
+# Real rule body lands in the M3 species-builtin sprint.
+id: nil-deref
+language: go
+rule:
+  pattern: $PTR.$FIELD
