@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gitpcl/ant/internal/engine"
 )
@@ -67,6 +68,37 @@ func (s *Store) SaveRun(run engine.Run) error {
 	return writeJSON(s.runFile(run.ID), run)
 }
 
+// LatestRunID returns the id of the most recently saved run (by file modtime),
+// or "" when no run has been recorded. It is a CLI convenience so `ant review`
+// with no argument reviews the run `ant fix` just produced; it is NOT on the
+// Store interface (a service-backed store would answer this differently). A
+// missing runs directory is "no runs", not an error.
+func (s *Store) LatestRunID() (string, error) {
+	entries, err := os.ReadDir(s.runsPath())
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", fmt.Errorf("local store: list runs: %w", err)
+	}
+	latestID := ""
+	var latestMod int64 = -1
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		info, ierr := e.Info()
+		if ierr != nil {
+			continue
+		}
+		if mod := info.ModTime().UnixNano(); mod > latestMod {
+			latestMod = mod
+			latestID = strings.TrimSuffix(e.Name(), ".json")
+		}
+	}
+	return latestID, nil
+}
+
 // LoadRun reads the Run with the given id. It returns *engine.RunNotFoundError
 // (matching errors.Is(err, engine.ErrRunNotFound)) when no such run exists.
 func (s *Store) LoadRun(id string) (engine.Run, error) {
@@ -84,13 +116,20 @@ func (s *Store) LoadRun(id string) (engine.Run, error) {
 	return run, nil
 }
 
-// StageDiff appends a ProposedDiff to the staged set for runID. The run must
-// already exist (it returns *engine.RunNotFoundError otherwise) so diffs cannot
-// be staged against a run that was never saved. Appends are read-modify-write
-// against the run's stage file; concurrent staging for the same run must be
-// serialized by the caller (the colony serializes shared-state writes per
-// TECHSPEC §8.1).
+// StageDiff appends a bare ProposedDiff (no Finding/Verify, Mark=pending) to the
+// staged set for runID. It is a thin shim over StageRecord so the on-disk format
+// is a single records file; diff-only callers keep working unchanged.
 func (s *Store) StageDiff(runID string, d engine.ProposedDiff) error {
+	return s.StageRecord(runID, engine.StagedRecord{Diff: d, Mark: engine.MarkPending})
+}
+
+// StageRecord appends a full StagedRecord to the staged set for runID. The run
+// must already exist (it returns *engine.RunNotFoundError otherwise) so records
+// cannot be staged against a run that was never saved. Appends are
+// read-modify-write against the run's stage file; concurrent staging for the
+// same run must be serialized by the caller (the colony serializes shared-state
+// writes per TECHSPEC §8.1).
+func (s *Store) StageRecord(runID string, rec engine.StagedRecord) error {
 	if _, err := s.LoadRun(runID); err != nil {
 		return err // already a typed RunNotFoundError when the run is missing
 	}
@@ -102,37 +141,72 @@ func (s *Store) StageDiff(runID string, d engine.ProposedDiff) error {
 		return err
 	}
 	// Immutable append: build a new slice rather than mutating the loaded one.
-	updated := make([]engine.ProposedDiff, 0, len(existing)+1)
+	updated := make([]engine.StagedRecord, 0, len(existing)+1)
 	updated = append(updated, existing...)
-	updated = append(updated, d)
+	updated = append(updated, rec)
 	return writeJSON(s.stageFile(runID), updated)
 }
 
-// ListStaged returns the staged diffs for runID in stage order. The run must
-// exist; an unknown run returns *engine.RunNotFoundError. A known run with no
-// staged diffs returns an empty slice and nil error.
+// ListStaged returns the staged diffs for runID in stage order, projected out of
+// the staged records. The run must exist; an unknown run returns
+// *engine.RunNotFoundError. A known run with no staged diffs returns an empty
+// slice and nil error.
 func (s *Store) ListStaged(runID string) ([]engine.ProposedDiff, error) {
+	records, err := s.ListRecords(runID)
+	if err != nil {
+		return nil, err
+	}
+	diffs := make([]engine.ProposedDiff, 0, len(records))
+	for _, rec := range records {
+		diffs = append(diffs, rec.Diff)
+	}
+	return diffs, nil
+}
+
+// ListRecords returns the full staged records for runID in stage order. The run
+// must exist; an unknown run returns *engine.RunNotFoundError. A known run with
+// nothing staged returns an empty slice and nil error.
+func (s *Store) ListRecords(runID string) ([]engine.StagedRecord, error) {
 	if _, err := s.LoadRun(runID); err != nil {
 		return nil, err
 	}
 	return s.readStaged(runID)
 }
 
+// SetMark persists a reviewer's decision on the staged record at index. It is a
+// read-modify-write against the records file: load, replace the mark on a copy
+// of the slice (immutable update — never mutate the loaded slice in place), and
+// rewrite atomically. An out-of-range index is an error so a bad cursor cannot
+// silently corrupt the set.
+func (s *Store) SetMark(runID string, index int, mark engine.Mark) error {
+	records, err := s.ListRecords(runID)
+	if err != nil {
+		return err
+	}
+	if index < 0 || index >= len(records) {
+		return fmt.Errorf("local store: set mark for run %q: index %d out of range (have %d staged)", runID, index, len(records))
+	}
+	updated := make([]engine.StagedRecord, len(records))
+	copy(updated, records)
+	updated[index].Mark = mark
+	return writeJSON(s.stageFile(runID), updated)
+}
+
 // readStaged reads the stage file for runID, treating a missing file as an
 // empty set. It assumes the run's existence has already been validated.
-func (s *Store) readStaged(runID string) ([]engine.ProposedDiff, error) {
+func (s *Store) readStaged(runID string) ([]engine.StagedRecord, error) {
 	data, err := os.ReadFile(s.stageFile(runID))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return []engine.ProposedDiff{}, nil
+			return []engine.StagedRecord{}, nil
 		}
 		return nil, fmt.Errorf("local store: read staged %q: %w", runID, err)
 	}
-	var diffs []engine.ProposedDiff
-	if err := json.Unmarshal(data, &diffs); err != nil {
+	var records []engine.StagedRecord
+	if err := json.Unmarshal(data, &records); err != nil {
 		return nil, fmt.Errorf("local store: decode staged %q: %w", runID, err)
 	}
-	return diffs, nil
+	return records, nil
 }
 
 // writeJSON marshals v to indented JSON and writes it atomically: it writes to

@@ -52,14 +52,42 @@ func TestSpeciesHelpListsChildren(t *testing.T) {
 	}
 }
 
-func TestStubCommandsReturnCleanly(t *testing.T) {
+// TestReviewEmptyStateExitsCleanly asserts `ant review` with no staged diffs
+// prints the empty-state screen and exits 0 (review-interaction.md §5.1). It is
+// a clean front-door path that needs no fix run.
+func TestReviewEmptyStateExitsCleanly(t *testing.T) {
+	out, code := runCmd(t, "review", "--path", t.TempDir())
+	if code != engine.ExitOK {
+		t.Errorf("review on an empty store exit = %d, want 0:\n%s", code, out)
+	}
+	if !strings.Contains(out, "No staged diffs were found") {
+		t.Errorf("review empty state should print the no-diffs screen:\n%s", out)
+	}
+}
+
+// TestApplyNothingStagedExitsCleanly asserts `ant apply` with nothing staged is
+// success (nothing to do is not an error).
+func TestApplyNothingStagedExitsCleanly(t *testing.T) {
+	out, code := runCmd(t, "apply", "--path", t.TempDir())
+	if code != engine.ExitOK {
+		t.Errorf("apply with nothing staged exit = %d, want 0:\n%s", code, out)
+	}
+	if !strings.Contains(out, "Nothing to apply") {
+		t.Errorf("apply with nothing staged should say so:\n%s", out)
+	}
+}
+
+// TestSpeciesStubsStillStubbed keeps the species leaves' clean-stub guarantee
+// (they are out of scope this sprint). fix/review/apply are now implemented and
+// covered by their own command + engine tests.
+func TestFixReviewApplyHelpExists(t *testing.T) {
 	for _, cmd := range []string{"fix", "review", "apply"} {
-		out, code := runCmd(t, cmd)
+		out, code := runCmd(t, cmd, "--help")
 		if code != engine.ExitOK {
-			t.Errorf("%s exit = %d, want 0 (clean stub)", cmd, code)
+			t.Errorf("%s --help exit = %d, want 0", cmd, code)
 		}
-		if !strings.Contains(out, "not yet implemented") {
-			t.Errorf("%s should print 'not yet implemented':\n%s", cmd, out)
+		if strings.Contains(out, "not yet implemented") {
+			t.Errorf("%s should be implemented, not a stub:\n%s", cmd, out)
 		}
 	}
 }

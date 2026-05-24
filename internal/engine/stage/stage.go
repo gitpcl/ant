@@ -60,6 +60,26 @@ func (a *Area) Add(d engine.ProposedDiff) error {
 	return nil
 }
 
+// AddRecord stages a full StagedRecord ({Finding, Diff, Verify, Mark}) for the
+// run, persisting the provenance triple `ant review` needs alongside the diff
+// (review-interaction.md §9). Like Add it does NOT touch the working tree and
+// validates that the diff carries provenance and at least one file change, so an
+// unattributed or empty record can never be staged. The colony calls this for
+// every verified ant because the bus already carries the Finding (ant.start) and
+// VerifyResult (ant.verified) at stage time.
+func (a *Area) AddRecord(rec engine.StagedRecord) error {
+	if rec.Diff.Fixer == "" {
+		return fmt.Errorf("stage: cannot stage a record with empty provenance (Fixer) for run %q", a.runID)
+	}
+	if len(rec.Diff.Files) == 0 {
+		return fmt.Errorf("stage: cannot stage an empty diff (no file changes) for run %q", a.runID)
+	}
+	if err := a.store.StageRecord(a.runID, rec); err != nil {
+		return fmt.Errorf("stage: persist record for run %q: %w", a.runID, err)
+	}
+	return nil
+}
+
 // List returns the staged diffs for the run in stage order, each with its
 // provenance and rationale intact. An unknown run surfaces the Store's typed
 // *engine.RunNotFoundError; a known run with nothing staged returns an empty
@@ -70,6 +90,29 @@ func (a *Area) List() ([]engine.ProposedDiff, error) {
 		return nil, fmt.Errorf("stage: list staged diffs for run %q: %w", a.runID, err)
 	}
 	return diffs, nil
+}
+
+// ListRecords returns the full staged records for the run in stage order, with
+// provenance (Finding), the trust chain (VerifyResult), and the reviewer's Mark
+// intact. `ant review` walks these; `ant apply` filters them by Mark. Surfaces
+// the Store's typed *engine.RunNotFoundError for an unknown run.
+func (a *Area) ListRecords() ([]engine.StagedRecord, error) {
+	records, err := a.store.ListRecords(a.runID)
+	if err != nil {
+		return nil, fmt.Errorf("stage: list staged records for run %q: %w", a.runID, err)
+	}
+	return records, nil
+}
+
+// Mark persists a reviewer's decision on the staged record at index (its
+// position in ListRecords order). It is how `ant review` records accept/skip so
+// the decision survives an interrupted session and `ant apply` lands exactly the
+// accepted set (review-interaction.md §1, §8).
+func (a *Area) Mark(index int, mark engine.Mark) error {
+	if err := a.store.SetMark(a.runID, index, mark); err != nil {
+		return fmt.Errorf("stage: mark record %d for run %q: %w", index, a.runID, err)
+	}
+	return nil
 }
 
 // Count returns the number of diffs currently staged for the run. It is a

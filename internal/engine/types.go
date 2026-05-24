@@ -88,6 +88,70 @@ type Scope struct {
 	IgnoreGlobs []string `json:"ignoreGlobs,omitempty"`
 }
 
+// Mark is a reviewer's decision on a staged diff, persisted via the Store so
+// `ant review` decisions survive an interrupted session and `ant apply` lands
+// exactly the accepted set (review-interaction.md §1, §9). The zero value is
+// MarkPending so a freshly-staged record is "not yet decided" by construction.
+type Mark int
+
+const (
+	// MarkPending is the zero value: the diff is staged but not yet reviewed.
+	MarkPending Mark = iota
+	// MarkAccepted means review accepted the diff; `ant apply` will land it.
+	MarkAccepted
+	// MarkSkipped means review skipped the diff; it stays staged but is NOT applied.
+	MarkSkipped
+)
+
+// markNames maps each Mark to a stable lowercase token for JSON/state round-trips.
+var markNames = map[Mark]string{
+	MarkPending:  "pending",
+	MarkAccepted: "accepted",
+	MarkSkipped:  "skipped",
+}
+
+// String renders a Mark as a stable lowercase token.
+func (m Mark) String() string {
+	if name, ok := markNames[m]; ok {
+		return name
+	}
+	return "pending"
+}
+
+// MarshalText keeps persisted state and any --json rendering human-readable and
+// stable (the token, not the int), mirroring Severity's text marshaling.
+func (m Mark) MarshalText() ([]byte, error) { return []byte(m.String()), nil }
+
+// UnmarshalText parses a Mark token back from persisted state. An unknown token
+// degrades to MarkPending (the safe default — an undecidable mark is never
+// auto-applied) rather than erroring, so a forward-compatible state file loads.
+func (m *Mark) UnmarshalText(text []byte) error {
+	switch string(text) {
+	case "accepted":
+		*m = MarkAccepted
+	case "skipped":
+		*m = MarkSkipped
+	default:
+		*m = MarkPending
+	}
+	return nil
+}
+
+// StagedRecord bundles everything `ant review` and `ant apply` need about one
+// staged fix: the originating Finding (provenance — which species/file/severity),
+// the ProposedDiff (the patch + Fixer string + Rationale), the VerifyResult (the
+// trust chain — which verifiers passed), and the reviewer's Mark. The colony
+// stages the full record because the bus already carries all three at stage time
+// (Finding from ant.start, Diff + Verify from ant.verified) — this is a
+// Store/persistence shape, NOT a change to the frozen --json event contract
+// (review-interaction.md §9, colony-view.md §9).
+type StagedRecord struct {
+	Finding Finding      `json:"finding"`
+	Diff    ProposedDiff `json:"diff"`
+	Verify  VerifyResult `json:"verify"`
+	Mark    Mark         `json:"mark"`
+}
+
 // Run is the persisted record of a single colony invocation. The Store rounds a
 // Run trip to disk so state survives process restarts and so the enterprise
 // service-backed Store can plug into the same shape (TECHSPEC §5.4).

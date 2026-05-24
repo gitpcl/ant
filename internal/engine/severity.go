@@ -69,8 +69,19 @@ func (s Severity) MarshalText() ([]byte, error) {
 
 // UnmarshalText implements encoding.TextUnmarshaler, validating the token via
 // ParseSeverity so deserialized severities go through the same boundary check.
+// The one exception is the zero-value token "unknown" (and the empty string),
+// which round-trips back to SeverityUnknown rather than erroring: MarshalText
+// emits "unknown" for an unset severity, so a persisted record carrying an
+// unassigned severity (e.g. a bare staged diff with no originating Finding) must
+// deserialize losslessly. User-facing input still goes through ParseSeverity,
+// which keeps rejecting "unknown" as invalid.
 func (s *Severity) UnmarshalText(text []byte) error {
-	parsed, err := ParseSeverity(string(text))
+	token := string(text)
+	if token == "" || token == "unknown" {
+		*s = SeverityUnknown
+		return nil
+	}
+	parsed, err := ParseSeverity(token)
 	if err != nil {
 		return err
 	}

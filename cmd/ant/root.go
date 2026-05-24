@@ -82,9 +82,9 @@ func newRootCmd() *cobra.Command {
 
 	root.AddCommand(
 		newScoutCmd(),
-		leaf("fix [path]", "Produce verified staged diffs (apply only with --apply)"),
-		leaf("review", "Walk staged diffs: accept/skip/diff/explain/next/quit"),
-		leaf("apply", "Land accepted staged diffs, on a branch by default"),
+		newFixCmd(),
+		newReviewCmd(),
+		newApplyCmd(),
 		newInitCmd(),
 		speciesCmd(),
 	)

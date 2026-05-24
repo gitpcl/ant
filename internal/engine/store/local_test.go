@@ -107,6 +107,96 @@ func TestStageListRoundTrip(t *testing.T) {
 	}
 }
 
+func sampleRecord(fixer string, mark engine.Mark) engine.StagedRecord {
+	return engine.StagedRecord{
+		Finding: engine.Finding{
+			Species:  "unused-import",
+			File:     "main.go",
+			Span:     engine.Span{StartLine: 3, StartCol: 1},
+			Severity: engine.SeverityHigh,
+			Message:  "unused import \"fmt\"",
+		},
+		Diff:   sampleDiff(fixer),
+		Verify: engine.VerifyResult{Passed: true, Checks: []engine.CheckResult{{Name: "compile", Passed: true}, {Name: "detector-clears", Passed: true}}},
+		Mark:   mark,
+	}
+}
+
+func TestStageRecordListRecordsRoundTrip(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.SaveRun(sampleRun("run-rec")); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+	r1 := sampleRecord("deterministic (delete-match)", engine.MarkPending)
+	r2 := sampleRecord("rawmodel (qwen2.5-coder)", engine.MarkPending)
+	if err := s.StageRecord("run-rec", r1); err != nil {
+		t.Fatalf("StageRecord r1: %v", err)
+	}
+	if err := s.StageRecord("run-rec", r2); err != nil {
+		t.Fatalf("StageRecord r2: %v", err)
+	}
+
+	got, err := s.ListRecords("run-rec")
+	if err != nil {
+		t.Fatalf("ListRecords: %v", err)
+	}
+	want := []engine.StagedRecord{r1, r2}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("records mismatch:\n got %+v\nwant %+v", got, want)
+	}
+
+	// ListStaged projects the diffs out of the records in stage order.
+	diffs, err := s.ListStaged("run-rec")
+	if err != nil {
+		t.Fatalf("ListStaged: %v", err)
+	}
+	if !reflect.DeepEqual(diffs, []engine.ProposedDiff{r1.Diff, r2.Diff}) {
+		t.Errorf("ListStaged projection mismatch: %+v", diffs)
+	}
+}
+
+func TestSetMarkPersists(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.SaveRun(sampleRun("run-mark")); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+	if err := s.StageRecord("run-mark", sampleRecord("d", engine.MarkPending)); err != nil {
+		t.Fatalf("StageRecord: %v", err)
+	}
+	if err := s.StageRecord("run-mark", sampleRecord("e", engine.MarkPending)); err != nil {
+		t.Fatalf("StageRecord: %v", err)
+	}
+
+	if err := s.SetMark("run-mark", 0, engine.MarkAccepted); err != nil {
+		t.Fatalf("SetMark 0 accepted: %v", err)
+	}
+	if err := s.SetMark("run-mark", 1, engine.MarkSkipped); err != nil {
+		t.Fatalf("SetMark 1 skipped: %v", err)
+	}
+
+	// A fresh Store over the same base proves the mark is on disk, not in memory.
+	got, err := New(s.base).ListRecords("run-mark")
+	if err != nil {
+		t.Fatalf("ListRecords after restart: %v", err)
+	}
+	if got[0].Mark != engine.MarkAccepted {
+		t.Errorf("record 0 mark = %v, want accepted", got[0].Mark)
+	}
+	if got[1].Mark != engine.MarkSkipped {
+		t.Errorf("record 1 mark = %v, want skipped", got[1].Mark)
+	}
+}
+
+func TestSetMarkOutOfRange(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.SaveRun(sampleRun("run-oob")); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+	if err := s.SetMark("run-oob", 0, engine.MarkAccepted); err == nil {
+		t.Error("SetMark on an empty staged set should error (index out of range)")
+	}
+}
+
 func TestStageDiffMissingRun(t *testing.T) {
 	s := New(t.TempDir())
 	err := s.StageDiff("ghost", sampleDiff("x"))

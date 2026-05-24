@@ -170,11 +170,21 @@ func (r *antRunner) process(ctx context.Context, antID int, ant Ant, serialize f
 		return outcome{skipped: true}
 	}
 
-	// 3. Stage the verified diff. SERIALIZED — StageDiff is a read-modify-write
-	// append on the Store; concurrent appends must not interleave.
+	// 3. Stage the verified diff as a full record. SERIALIZED — StageRecord is a
+	// read-modify-write append on the Store; concurrent appends must not
+	// interleave. The record bundles the Finding (provenance), the diff, and the
+	// VerifyResult (the trust chain) so `ant review` can show all three and
+	// `ant apply` can land only marked diffs — the bus already carries every
+	// field, so this persists what already happened (review-interaction.md §9).
+	record := engine.StagedRecord{
+		Finding: ant.Finding,
+		Diff:    diff,
+		Verify:  vr,
+		Mark:    engine.MarkPending,
+	}
 	var stageErr error
 	serialize(func() {
-		stageErr = r.area.Add(diff)
+		stageErr = r.area.AddRecord(record)
 	})
 	if stageErr != nil {
 		return outcome{err: fmt.Errorf("colony: stage verified diff for finding %s:%d: %w", ant.Finding.File, ant.Finding.Span.StartLine, stageErr)}
