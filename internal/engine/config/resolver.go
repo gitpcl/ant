@@ -59,6 +59,8 @@ func NewResolver(v *viper.Viper, manifest ManifestDefaults) *Resolver {
 	v.SetDefault(KeyConcurrency, concurrency)
 	v.SetDefault(KeyFixer, fixer)
 	v.SetDefault(KeyModel, model)
+	v.SetDefault(KeyVerifyMaxChangedLines, DefaultMaxChangedLines)
+	v.SetDefault(KeyVerifyMaxChangedFiles, DefaultMaxChangedFiles)
 
 	return &Resolver{v: v}
 }
@@ -93,4 +95,19 @@ func (r *Resolver) Model() string {
 // scope.
 func (r *Resolver) IgnorePaths() []string {
 	return r.v.GetStringSlice(KeyIgnorePaths)
+}
+
+// MaxChangedLines returns the effective diff-bounded line cap: flag/toml >
+// built-in default (DefaultMaxChangedLines). A configured 0 means unbounded on
+// the line dimension. The colony passes this into verify.NewDiffBounded so the
+// gate's size limit is a resolved config value, not a hardcoded constant.
+func (r *Resolver) MaxChangedLines() int {
+	return r.v.GetInt(KeyVerifyMaxChangedLines)
+}
+
+// MaxChangedFiles returns the effective diff-bounded file cap: flag/toml >
+// built-in default (DefaultMaxChangedFiles). A configured 0 means unbounded on
+// the file dimension.
+func (r *Resolver) MaxChangedFiles() int {
+	return r.v.GetInt(KeyVerifyMaxChangedFiles)
 }

@@ -47,6 +47,18 @@ func renderHumanEvent(w io.Writer, ev Event, detail bool) error {
 		}
 		return renderFinding(w, ev.DetectFinding.Finding, detail)
 
+	case TypeAntVerified:
+		if ev.AntVerified == nil {
+			return nil
+		}
+		return renderVerified(w, *ev.AntVerified)
+
+	case TypeAntSkipped:
+		if ev.AntSkipped == nil {
+			return nil
+		}
+		return renderSkipped(w, *ev.AntSkipped)
+
 	case TypeRunEnd:
 		if ev.RunEnd == nil {
 			return nil
@@ -68,6 +80,32 @@ func renderFinding(w io.Writer, f engine.Finding, detail bool) error {
 		return err
 	}
 	return nil
+}
+
+// renderVerified prints a one-line confirmation that an ant's fix passed
+// verification and was staged, with its provenance (the Fixer string) so the
+// human/TUI output shows the trust chain, mirroring what --json carries.
+func renderVerified(w io.Writer, p AntVerifiedPayload) error {
+	file := ""
+	if len(p.Diff.Files) > 0 {
+		file = p.Diff.Files[0].Path
+	}
+	_, err := fmt.Fprintf(w, "  verified %s — staged (%s)\n", file, p.Diff.Fixer)
+	return err
+}
+
+// renderSkipped prints a skip prominently: which finding was skipped, which
+// verifier gate failed, and the reason. A skip is a TRUST SIGNAL, not a hidden
+// error (PRD §6.3), so it is always surfaced in human output — never swallowed —
+// exactly as --json carries it on the ant.skipped payload.
+func renderSkipped(w io.Writer, p AntSkippedPayload) error {
+	reason := p.Reason
+	if reason == "" {
+		reason = "verification failed"
+	}
+	_, err := fmt.Fprintf(w, "  skipped %s:%d — %s failed: %s\n",
+		p.Finding.File, p.Finding.Span.StartLine, p.FailedCheck.Name, reason)
+	return err
 }
 
 // renderSummary prints the closing summary. It always states that nothing was

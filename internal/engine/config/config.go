@@ -20,6 +20,22 @@ const (
 	KeyModel = "colony.model"
 	// KeyIgnorePaths is the viper key for the ignore-globs list.
 	KeyIgnorePaths = "ignore.paths"
+	// KeyVerifyMaxChangedLines is the viper key for the diff-bounded line cap.
+	KeyVerifyMaxChangedLines = "verify.max_changed_lines"
+	// KeyVerifyMaxChangedFiles is the viper key for the diff-bounded file cap.
+	KeyVerifyMaxChangedFiles = "verify.max_changed_files"
+)
+
+// Diff-bounded built-in defaults (TECHSPEC §5.3 — diff-bounded guards runaway
+// edits). They are the sane caps used when ant.toml omits a [verify] section.
+// The values mirror verify.DefaultMaxChanged* but live here so config has no
+// import on verify (the dependency runs config → verify at the call site, never
+// the reverse).
+const (
+	// DefaultMaxChangedLines caps total added+removed diff lines (diff-bounded).
+	DefaultMaxChangedLines = 200
+	// DefaultMaxChangedFiles caps files touched by a single fix (diff-bounded).
+	DefaultMaxChangedFiles = 10
 )
 
 // DefaultFixer is the built-in default fixer adapter (TECHSPEC §9 example).
@@ -48,7 +64,17 @@ func DefaultConcurrency() int {
 type Config struct {
 	Colony  Colony             `toml:"colony"`
 	Ignore  Ignore             `toml:"ignore"`
+	Verify  Verify             `toml:"verify"`
 	Species map[string]Species `toml:"species"`
+}
+
+// Verify holds the [verify] section: the diff-bounded size caps that guard
+// runaway edits (TECHSPEC §5.3, §8.1). Pointer fields distinguish "absent" (fall
+// through to the built-in default) from "set to 0" (unbounded on that
+// dimension), matching the rest of the schema's absent-vs-zero discipline.
+type Verify struct {
+	MaxChangedLines *int `toml:"max_changed_lines"`
+	MaxChangedFiles *int `toml:"max_changed_files"`
 }
 
 // Colony holds the [colony] section: run-wide knobs (TECHSPEC §9). Pointer
