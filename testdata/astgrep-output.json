@@ -1,0 +1,51 @@
+[
+  {
+    "text": "import \"strings\"",
+    "range": {
+      "byteOffset": { "start": 27, "end": 43 },
+      "start": { "line": 2, "column": 0 },
+      "end": { "line": 2, "column": 16 }
+    },
+    "file": "main.go",
+    "lines": "import \"strings\"",
+    "charCount": { "leading": 0, "trailing": 0 },
+    "language": "Go",
+    "ruleId": "unused-import",
+    "severity": "error",
+    "message": "Imported package \"strings\" is never used",
+    "metaVariables": {
+      "single": {
+        "PKG": {
+          "text": "strings",
+          "range": {
+            "byteOffset": { "start": 34, "end": 43 },
+            "start": { "line": 2, "column": 7 },
+            "end": { "line": 2, "column": 16 }
+          }
+        }
+      },
+      "multi": {},
+      "transformed": {}
+    }
+  },
+  {
+    "text": "x := 1",
+    "range": {
+      "byteOffset": { "start": 78, "end": 84 },
+      "start": { "line": 6, "column": 1 },
+      "end": { "line": 6, "column": 7 }
+    },
+    "file": "main.go",
+    "lines": "\tx := 1",
+    "charCount": { "leading": 1, "trailing": 0 },
+    "language": "Go",
+    "ruleId": "dead-code",
+    "severity": "warning",
+    "message": "Variable \"x\" is assigned but never read",
+    "metaVariables": {
+      "single": {},
+      "multi": {},
+      "transformed": {}
+    }
+  }
+]

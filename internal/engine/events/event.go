@@ -95,7 +95,11 @@ type ApplyDonePayload struct {
 }
 
 // RunEndPayload closes a run with aggregate counts for the summary line and the
-// CI exit-code decision (highest severity seen vs --fail-on).
+// CI exit-code decision (highest severity seen vs --fail-on). Error is set when
+// the run aborted on an operational failure (e.g. a missing detector binary);
+// it is the empty string for a clean run. Carrying it on the terminal event
+// keeps the --json stream well-formed (it always ends with run.end) and makes
+// the failure visible to the front doors that parse it (TECHSPEC §11, §12).
 type RunEndPayload struct {
 	RunID           string `json:"runId"`
 	Findings        int    `json:"findings"`
@@ -103,4 +107,5 @@ type RunEndPayload struct {
 	Skipped         int    `json:"skipped"`
 	Applied         int    `json:"applied"`
 	HighestSeverity string `json:"highestSeverity"`
+	Error           string `json:"error,omitempty"`
 }

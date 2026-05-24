@@ -50,9 +50,16 @@ func WithBuffer(n int) busOption {
 	}
 }
 
-// withClock injects a clock for deterministic timestamps in tests.
-func withClock(now func() time.Time) busOption {
-	return func(b *Bus) { b.now = now }
+// WithClock injects the clock the bus stamps events with. It exists so golden
+// --json tests can produce byte-stable output (TECHSPEC §12): a fixed clock
+// makes the event stream deterministic without post-hoc timestamp scrubbing.
+// Production callers omit it and get time.Now.
+func WithClock(now func() time.Time) busOption {
+	return func(b *Bus) {
+		if now != nil {
+			b.now = now
+		}
+	}
 }
 
 // NewBus creates an empty bus with no subscribers.
