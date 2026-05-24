@@ -2,7 +2,7 @@ module github.com/gitpcl/ant
 
 go 1.25.0
 
-toolchain go1.26.1
+toolchain go1.26.3
 
 require (
 	github.com/pelletier/go-toml/v2 v2.2.4
