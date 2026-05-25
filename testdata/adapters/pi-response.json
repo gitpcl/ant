@@ -1,0 +1,5 @@
+{
+  "text": "Batch the per-id queries into a single call.\n\n```diff\n--- a/svc/query.go\n+++ b/svc/query.go\n@@ -10,3 +10,1 @@\n-for _, id := range ids {\n-\tdb.Get(id)\n-}\n+rows := db.GetAll(ids)\n```\n",
+  "model": "qwen2.5-coder",
+  "stop_reason": "end_turn"
+}

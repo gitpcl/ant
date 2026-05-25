@@ -1,0 +1,10 @@
+{
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "duration_ms": 4210,
+  "num_turns": 1,
+  "session_id": "rec-claudecode-0001",
+  "total_cost_usd": 0.0123,
+  "result": "Batch the per-id queries into a single call.\n\n```diff\n--- a/svc/query.go\n+++ b/svc/query.go\n@@ -10,3 +10,1 @@\n-for _, id := range ids {\n-\tdb.Get(id)\n-}\n+rows := db.GetAll(ids)\n```\n"
+}

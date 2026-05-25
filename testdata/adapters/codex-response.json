@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"rec-codex-0001"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_0","type":"reasoning"}}
+{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"The loop issues one query per id."}}
+{"type":"item.started","item":{"id":"item_1","type":"agent_message"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Batch the per-id queries into a single call.\n\n```diff\n--- a/svc/query.go\n+++ b/svc/query.go\n@@ -10,3 +10,1 @@\n-for _, id := range ids {\n-\tdb.Get(id)\n-}\n+rows := db.GetAll(ids)\n```\n"}}
+{"type":"turn.completed","usage":{"input_tokens":812,"output_tokens":96}}
