@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -92,15 +94,140 @@ func TestFixReviewApplyHelpExists(t *testing.T) {
 	}
 }
 
-func TestSpeciesStubsReturnCleanly(t *testing.T) {
-	for _, args := range [][]string{{"species", "list"}, {"species", "install", "x"}, {"species", "remove", "x"}} {
-		out, code := runCmd(t, args...)
-		if code != engine.ExitOK {
-			t.Errorf("%v exit = %d, want 0", args, code)
+// TestSpeciesListShowsBuiltins confirms `species list` is wired to the resolver
+// + trust authority (not a stub): against an empty working tree it succeeds and
+// lists the embedded built-ins with their effective trust. The engine package's
+// resolve/trust tests cover the decision logic; this asserts the CLI renders it.
+func TestSpeciesListShowsBuiltins(t *testing.T) {
+	dir := t.TempDir()
+	out, code := runCmd(t, "species", "list", "--path", dir)
+	if code != engine.ExitOK {
+		t.Fatalf("species list exit = %d, want 0:\n%s", code, out)
+	}
+	if strings.Contains(out, "not yet implemented") {
+		t.Errorf("species list should be implemented, not a stub:\n%s", out)
+	}
+	// The embedded set (ADR-0002) must appear, with the table header and the
+	// built-in origin column.
+	for _, want := range []string{"NAME", "ORIGIN", "TRUST", "unused-import", "built-in"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("species list missing %q:\n%s", want, out)
 		}
-		if !strings.Contains(out, "not yet implemented") {
-			t.Errorf("%v should print 'not yet implemented':\n%s", args, out)
+	}
+}
+
+// TestSpeciesRemoveProtectsBuiltin confirms `species remove` refuses an embedded
+// built-in with a non-zero (operational) exit — built-ins ship in the binary and
+// are not removable. The engine package's remove_test.go covers the disk delete +
+// trust clear for installed species.
+func TestSpeciesRemoveProtectsBuiltin(t *testing.T) {
+	dir := t.TempDir()
+	out, code := runCmd(t, "species", "remove", "unused-import", "--path", dir)
+	if code != engine.ExitOperational {
+		t.Errorf("species remove built-in exit = %d, want %d (operational/protected):\n%s",
+			code, engine.ExitOperational, out)
+	}
+	out, code = runCmd(t, "species", "remove", "ghost-species", "--path", dir)
+	if code != engine.ExitOperational {
+		t.Errorf("species remove missing exit = %d, want %d (operational):\n%s",
+			code, engine.ExitOperational, out)
+	}
+}
+
+// TestSpeciesInstallIsImplemented confirms `species install` is wired to the
+// engine (not a stub): its --help renders without the stub line and requires the
+// <git-url> argument. It is the security-stage feature this sprint. We do not
+// drive a real clone here (no network); the engine package's install_test.go
+// covers the clone+validate+no-exec behavior with local fixture repos.
+func TestSpeciesInstallIsImplemented(t *testing.T) {
+	out, code := runCmd(t, "species", "install", "--help")
+	if code != engine.ExitOK {
+		t.Errorf("species install --help exit = %d, want 0", code)
+	}
+	if strings.Contains(out, "not yet implemented") {
+		t.Errorf("species install should be implemented, not a stub:\n%s", out)
+	}
+	// Missing the required <git-url> argument is a usage error (non-zero), not a
+	// silent no-op.
+	if _, code := runCmd(t, "species", "install"); code == engine.ExitOK {
+		t.Errorf("species install with no URL should fail (requires <git-url>)")
+	}
+}
+
+// freshSpeciesManifest is a well-formed installed species that REQUESTS
+// auto-apply. It exists to prove the §6.3 freshly-installed override: a brand-new
+// installed species must still list as propose-only despite auto_apply=true,
+// until its output is reviewed once.
+const freshSpeciesManifest = `name = "fresh"
+description = "freshly installed, requests auto-apply"
+severity = "medium"
+languages = ["go"]
+auto_apply = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind = "deterministic"
+transform = "delete-match"
+
+[verify]
+checks = ["compile"]
+`
+
+// writeFreshInstalledSpecies places the fresh fixture species under
+// <root>/.ant/species/fresh so `species list --path <root>` discovers it as a
+// user-installed species with no tracked trust state (the brand-new default).
+func writeFreshInstalledSpecies(t *testing.T, root string) {
+	t.Helper()
+	dir := filepath.Join(root, ".ant", "species", "fresh")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", dir, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "species.toml"), []byte(freshSpeciesManifest), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "detect.yml"), []byte("id: fresh\n"), 0o644); err != nil {
+		t.Fatalf("write rule: %v", err)
+	}
+}
+
+// TestSpeciesListMarksFreshlyInstalled is the load-bearing list assertion: an
+// installed species whose manifest says auto_apply=true is still shown as
+// propose-only, distinctly marked as freshly installed (gated until reviewed) —
+// the §6.3 override surfacing in the CLI exactly as the apply path would gate it.
+func TestSpeciesListMarksFreshlyInstalled(t *testing.T) {
+	root := t.TempDir()
+	writeFreshInstalledSpecies(t, root)
+
+	out, code := runCmd(t, "species", "list", "--path", root)
+	if code != engine.ExitOK {
+		t.Fatalf("species list exit = %d, want 0:\n%s", code, out)
+	}
+	if !strings.Contains(out, "fresh") {
+		t.Fatalf("species list missing the installed species:\n%s", out)
+	}
+	// The fresh species line must show the distinct freshly-installed marker, NOT
+	// bare auto-apply (its manifest auto_apply=true is overridden until reviewed).
+	var freshLine string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "fresh") {
+			freshLine = line
+			break
 		}
+	}
+	if freshLine == "" {
+		t.Fatalf("could not find the 'fresh' row in:\n%s", out)
+	}
+	if !strings.Contains(freshLine, "installed") {
+		t.Errorf("fresh species should show 'installed' origin: %q", freshLine)
+	}
+	if !strings.Contains(freshLine, "new") || !strings.Contains(freshLine, "propose-only") {
+		t.Errorf("freshly-installed species must be marked propose-only (new): %q", freshLine)
+	}
+	if strings.Contains(freshLine, "\tauto-apply") || strings.HasSuffix(strings.TrimSpace(freshLine), "auto-apply") {
+		t.Errorf("freshly-installed species must NOT show bare auto-apply: %q", freshLine)
 	}
 }
 

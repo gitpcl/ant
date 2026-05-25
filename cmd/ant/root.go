@@ -47,9 +47,9 @@ func executeWithExitCode(root *cobra.Command) int {
 }
 
 // newRootCmd builds the cobra command tree for the frozen v1 command surface
-// (ADR 0001 / TECHSPEC §7). Bare `ant` aliases to scout (ADR 0001). The leaf
-// commands not yet implemented print a clean "not yet implemented" line and
-// return without error; scout is fully wired this sprint.
+// (ADR 0001 / TECHSPEC §7). Bare `ant` aliases to scout (ADR 0001). Every leaf
+// command (scout, fix, review, apply, init, and the species subtree) is wired to
+// the engine.
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:          "ant [path]",
@@ -91,16 +91,6 @@ func newRootCmd() *cobra.Command {
 	return root
 }
 
-// leaf builds a stub subcommand whose behavior lands in a later sprint. The
-// first word of use is the command name.
-func leaf(use, short string) *cobra.Command {
-	return &cobra.Command{
-		Use:   use,
-		Short: short,
-		RunE:  notYetImplemented(firstWord(use)),
-	}
-}
-
 // speciesCmd builds the `ant species` parent with its list/install/remove
 // children (TECHSPEC §7).
 func speciesCmd() *cobra.Command {
@@ -109,28 +99,9 @@ func speciesCmd() *cobra.Command {
 		Short: "Manage detection species",
 	}
 	cmd.AddCommand(
-		leaf("list", "Show available species and effective trust level"),
-		leaf("install <git-url>", "Install a community species repo"),
-		leaf("remove <name>", "Remove an installed community species"),
+		newSpeciesListCmd(),
+		newSpeciesInstallCmd(),
+		newSpeciesRemoveCmd(),
 	)
 	return cmd
-}
-
-// notYetImplemented returns a RunE that reports the command is a skeleton stub
-// and returns cleanly (exit 0). It is pure rendering — no engine logic.
-func notYetImplemented(name string) func(*cobra.Command, []string) error {
-	return func(cmd *cobra.Command, _ []string) error {
-		fmt.Fprintf(cmd.OutOrStdout(), "ant %s: not yet implemented (engine v%s)\n", name, engine.Version)
-		return nil
-	}
-}
-
-// firstWord returns the leading token of a cobra Use string.
-func firstWord(use string) string {
-	for i := 0; i < len(use); i++ {
-		if use[i] == ' ' {
-			return use[:i]
-		}
-	}
-	return use
 }
