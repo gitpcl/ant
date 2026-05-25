@@ -62,10 +62,44 @@ func DefaultConcurrency() int {
 // defaults on top of this. Unknown top-level sections or keys are reported as
 // warnings by the loader rather than silently dropped.
 type Config struct {
-	Colony  Colony             `toml:"colony"`
-	Ignore  Ignore             `toml:"ignore"`
-	Verify  Verify             `toml:"verify"`
-	Species map[string]Species `toml:"species"`
+	Colony    Colony             `toml:"colony"`
+	Ignore    Ignore             `toml:"ignore"`
+	Verify    Verify             `toml:"verify"`
+	Telemetry Telemetry          `toml:"telemetry"`
+	Species   map[string]Species `toml:"species"`
+}
+
+// Telemetry holds the [telemetry] section: the single opt-in switch for the
+// privacy-respecting aggregate metrics (PRD §8, TECHSPEC §11). Telemetry is OFF
+// by default — with no [telemetry] section, or with Enabled nil/false, the
+// engine collects and sends NOTHING. Setting `[telemetry] enabled = true` is the
+// explicit, documented opt-in that turns on aggregate collection (species usage,
+// accept rate, verifier catch rate — never code/paths/PII). The pointer
+// distinguishes "absent" (default off) from an explicit false, matching the
+// schema's absent-vs-zero discipline; there is deliberately no endpoint/key
+// field here (v1 has no live transport — see internal/engine/telemetry).
+type Telemetry struct {
+	Enabled *bool `toml:"enabled"`
+}
+
+// DefaultTelemetry is the built-in default for telemetry: OFF (PRD §8 — privacy
+// is the contract; telemetry is opt-in only). It is the value a bare `ant` uses
+// with no config: zero collection, zero send.
+const DefaultTelemetry = false
+
+// ResolveTelemetry computes the effective telemetry setting through the
+// resolution chain (ant.toml > built-in default). It lives in the engine — not
+// the CLI — so every front door resolves telemetry identically and the boundary
+// test keeps the logic out of the thin command layer (TECHSPEC §3). There is no
+// flag override on purpose: telemetry is a deliberate, persistent opt-in in
+// ant.toml, not something silently flipped on by a transient command-line flag.
+// With the [telemetry] enabled key absent it falls through to DefaultTelemetry
+// (off), so the default posture is unambiguously zero collection.
+func (c Config) ResolveTelemetry() bool {
+	if c.Telemetry.Enabled != nil {
+		return *c.Telemetry.Enabled
+	}
+	return DefaultTelemetry
 }
 
 // Verify holds the [verify] section: the diff-bounded size caps that guard
@@ -84,6 +118,39 @@ type Colony struct {
 	Concurrency *int    `toml:"concurrency"`
 	Fixer       *string `toml:"fixer"`
 	Model       *string `toml:"model"`
+	// Trails opts into trail-density scheduler re-prioritization (ADR-0003,
+	// TECHSPEC §8.2). It is OFF by default: with Trails nil or false the colony
+	// schedules embarrassingly-parallel and order-stable, exactly as v1 ships, and
+	// writes no trail markers. Setting it true makes a verified-fixing ant write a
+	// trail marker (keyed by species + code-location class) and biases the work
+	// queue toward classes with higher trail density. Pointer distinguishes
+	// "absent" (default off) from an explicit false, matching the section's
+	// absent-vs-zero discipline.
+	Trails *bool `toml:"trails"`
+}
+
+// DefaultTrails is the built-in default for trail-density scheduling: OFF
+// (ADR-0003 — v1 ships embarrassingly-parallel; trails are opt-in behind a
+// flag). It is the value a bare `ant` uses with no config and no --trails flag.
+const DefaultTrails = false
+
+// ResolveTrails computes the effective trails setting through the resolution
+// chain (flag > ant.toml > built-in default). It lives in the engine — not the
+// CLI — so every front door resolves trails identically and the boundary test
+// keeps the logic out of the thin command layer (TECHSPEC §3). flagSet reports
+// whether the --trails flag was explicitly provided; flagValue is its value.
+// With the flag absent it falls through to [colony] trails, then to
+// DefaultTrails (off). This mirrors the absent-vs-zero pointer discipline of the
+// rest of the schema: an unset flag and an unset toml key both mean "fall
+// through", never "force off".
+func (c Config) ResolveTrails(flagSet, flagValue bool) bool {
+	if flagSet {
+		return flagValue
+	}
+	if c.Colony.Trails != nil {
+		return *c.Colony.Trails
+	}
+	return DefaultTrails
 }
 
 // Ignore holds the [ignore] section: path globs excluded from a run

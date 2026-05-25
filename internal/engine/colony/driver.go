@@ -82,6 +82,14 @@ type DriveOptions struct {
 	Concurrency int
 	Now         func() time.Time
 
+	// Trails, when non-nil, opts into flag-gated trail scheduling (ADR-0003,
+	// TECHSPEC §8.2): the work queue is biased toward higher-density (species,
+	// location-class) findings, and each verified-fixing ant writes a marker off
+	// the critical path. Nil (the default, when [colony] trails / --trails is
+	// unset) keeps scheduling order-stable and writes no markers. The CLI passes
+	// the *local.Store here only when trails are enabled.
+	Trails TrailStore
+
 	// Apply, when set with ApplyFused, fuses apply for trusted species after the
 	// colony stages. Nil Apply (or ApplyFused=false) leaves everything staged for
 	// `ant review` — the default, nothing-applied behavior.
@@ -102,6 +110,23 @@ type DriveOptions struct {
 	Workers  int
 	Ascii    bool
 	Color    bool
+
+	// Telemetry, when non-nil, is an additional bus consumer that folds the run's
+	// events into privacy-safe aggregates (species usage, verifier catch rate —
+	// PRD §8). It is a plain Subscribe() consumer alongside the renderer, fully
+	// decoupled from the colony internals and from the frozen --json contract. The
+	// CLI passes a sink here ONLY when [telemetry] enabled = true; otherwise it is
+	// nil and nothing is collected. It does NOT gate or alter the run.
+	Telemetry BusObserver
+}
+
+// BusObserver is the narrow seam the colony uses to attach an optional telemetry
+// sink to the run's event bus (defined where used; the telemetry package's
+// *Sink satisfies it). It is a plain subscriber — it cannot influence the run,
+// only observe it — keeping telemetry decoupled and the --json contract
+// untouched. A nil BusObserver means telemetry is off (the default).
+type BusObserver interface {
+	Observe(bus *events.Bus)
 }
 
 // Drive runs the full fix pipeline and renders it. It returns the colony Result
@@ -124,6 +149,14 @@ func Drive(ctx context.Context, w io.Writer, opts DriveOptions) (Result, error) 
 
 	bus := events.NewBus()
 	sub := bus.Subscribe()
+
+	// Attach the optional telemetry sink as a plain bus consumer BEFORE any event
+	// is published, so it observes the full run. It is nil (no-op) unless the CLI
+	// resolved [telemetry] enabled = true; it never gates or alters the run. The
+	// sink's lifecycle (final Report on Close) is owned by the caller, not here.
+	if opts.Telemetry != nil {
+		opts.Telemetry.Observe(bus)
+	}
 
 	renderErr := make(chan error, 1)
 	go func() {
@@ -194,8 +227,13 @@ func runFix(ctx context.Context, bus *events.Bus, runID string, clock func() tim
 // ant.* emission logic is not duplicated.
 func scheduleAndApply(ctx context.Context, bus *events.Bus, runID string, opts DriveOptions, findings []engine.Finding, ants []Ant) (Result, error) {
 	area := stageArea(opts.Store, runID)
+	// Trail-density bias (flag-gated, ADR-0003). With opts.Trails nil this returns
+	// ants unchanged — the order-stable embarrassingly-parallel schedule v1 ships.
+	// The pool itself is unchanged; trails only re-order the queue and add the
+	// off-critical-path marker write inside antRunner.
+	ants = scheduleOrder(ants, opts.Trails)
 	pool := newPool(opts.Concurrency)
-	agg, runErr := pool.run(ctx, ants, &antRunner{runID: runID, scope: opts.Scope, bus: bus, area: area})
+	agg, runErr := pool.run(ctx, ants, &antRunner{runID: runID, scope: opts.Scope, bus: bus, area: area, trails: opts.Trails})
 
 	result := Result{RunID: runID, Verified: agg.verified, Skipped: agg.skipped, Staged: agg.verified}
 

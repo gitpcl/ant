@@ -3,9 +3,12 @@ package main
 import (
 	"sort"
 
+	"github.com/gitpcl/ant/internal/engine"
+	"github.com/gitpcl/ant/internal/engine/config"
 	"github.com/gitpcl/ant/internal/engine/review"
 	"github.com/gitpcl/ant/internal/engine/stage"
 	store "github.com/gitpcl/ant/internal/engine/store"
+	"github.com/gitpcl/ant/internal/engine/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -73,7 +76,36 @@ func runReview(cmd *cobra.Command, args []string) error {
 	if len(reviewed) > 0 {
 		_ = st.MarkReviewed(reviewed...)
 	}
+
+	// Telemetry (PRD §8 accept rate): OFF by default. When [telemetry] enabled =
+	// true, fold this pass's final accept/skip MARKS (the decision only — never
+	// the diff or any content) into the privacy-safe accept-rate aggregate. The
+	// sink is nil/no-op when disabled, so nothing is read or sent in the default
+	// case. A telemetry error must never break review, so Close's error is ignored.
+	cfg, _, _ := config.Load(configFileOrDefault(configPathFlag(cmd)))
+	if tel := telemetry.New(cfg.ResolveTelemetry(), telemetry.NopTransport{}, nil); tel.Enabled() {
+		for _, mark := range reviewMarks(area) {
+			tel.RecordReviewDecision(mark)
+		}
+		_ = tel.Close()
+	}
 	return nil
+}
+
+// reviewMarks returns the final accept/skip Mark of every staged record after a
+// review pass, so telemetry can fold the accept rate. It reads only the decision
+// — never the diff, file, or any content. A load error yields no marks (the rate
+// simply reflects nothing this pass rather than guessing).
+func reviewMarks(area *stage.Area) []engine.Mark {
+	records, err := area.ListRecords()
+	if err != nil {
+		return nil
+	}
+	marks := make([]engine.Mark, 0, len(records))
+	for _, rec := range records {
+		marks = append(marks, rec.Mark)
+	}
+	return marks
 }
 
 // reviewedSpecies returns the distinct species names that own the staged records

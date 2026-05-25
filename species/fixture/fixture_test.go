@@ -52,6 +52,19 @@ func cases() []fixture.Case {
 			GoldenPath: filepath.Join("testdata", "missing-await", "fix.golden"),
 			Fixer:      fixture.RecordedFixer(engine.FileDiff{Path: "repo.go", Patch: missingAwaitPatch}),
 		},
+		{
+			// ai-slop ships DISABLED by default (species.toml enabled = false), but
+			// the harness drives its detect→fix→verify→golden path directly: the
+			// pipeline operates on the species regardless of the runtime enabled
+			// flag (enabled=false is a resolution-time concern, not a harness one).
+			// A separate test (TestAISlopShipsDisabled) confirms it still resolves as
+			// disabled in a normal run.
+			Name:       "ai-slop",
+			SpeciesDir: filepath.Join(speciesRoot, "ai-slop"),
+			RepoDir:    filepath.Join("testdata", "ai-slop", "repo"),
+			GoldenPath: filepath.Join("testdata", "ai-slop", "fix.golden"),
+			Fixer:      fixture.RecordedFixer(engine.FileDiff{Path: "repo.go", Patch: aiSlopPatch}),
+		},
 	}
 }
 
@@ -128,6 +141,19 @@ const missingAwaitPatch = `--- a/repo.go
 +		total += r
 +	}
 `
+
+// aiSlopPatch inlines the redundant temporary `result` into a direct
+// `return a + b`, removing the AI-boilerplate tic the ai-slop detector
+// nominated. After this fix the `$V := $EXPR` / `return $V` shape is gone, so
+// detector-clears reports zero matches; compile + tests:affected confirm Sum's
+// behavior is unchanged. (ai-slop is fuzzy/candidate-tier and ships disabled —
+// see the case comment and TestAISlopShipsDisabled.)
+const aiSlopPatch = "--- a/repo.go\n" +
+	"+++ b/repo.go\n" +
+	"@@ -16,2 +16,1 @@\n" +
+	"-\tresult := a + b\n" +
+	"-\treturn result\n" +
+	"+\treturn a + b\n"
 
 // TestBuiltinSpeciesFixtures runs the detect→fix→verify→golden harness over each
 // built-in deterministic species with the REAL ast-grep detector, the REAL

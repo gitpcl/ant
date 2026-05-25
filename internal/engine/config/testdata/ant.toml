@@ -5,9 +5,13 @@
 concurrency = 6              # default: NumCPU
 fixer       = "pi"           # default fixer adapter
 model       = "qwen2.5-coder"
+trails      = true           # opt into trail-density scheduling (ADR-0003; default off)
 
 [ignore]
 paths = ["vendor/", "node_modules/", "*_generated.go"]
+
+[telemetry]
+enabled = true               # opt into privacy-safe aggregate telemetry (PRD §8; default off)
 
 [species.unused-import]
 auto_apply = true

@@ -45,6 +45,15 @@ type Options struct {
 	RunID       string
 	Concurrency int
 	Now         func() time.Time
+
+	// Trails, when non-nil, opts into flag-gated trail scheduling (ADR-0003,
+	// TECHSPEC §8.2): the queue is biased toward classes with higher trail
+	// density before scheduling, and each verified-fixing ant writes a marker
+	// AFTER its diff is staged (off the critical path). Nil Trails (the default)
+	// keeps scheduling order-stable and writes no markers — the embarrassingly-
+	// parallel v1 behavior. It is the local TrailStore seam; the CLI passes the
+	// *local.Store only when [colony] trails / --trails is set.
+	Trails TrailStore
 }
 
 // Result summarizes a colony run for the caller's exit-code / summary decision.
@@ -87,12 +96,18 @@ func Run(ctx context.Context, bus *events.Bus, opts Options) (Result, error) {
 
 	area := stage.New(opts.Store, runID)
 
+	// Trail-density bias (flag-gated). With opts.Trails nil this returns the ants
+	// unchanged — the order-stable, embarrassingly-parallel schedule v1 ships
+	// (ADR-0003). The pool itself is untouched: trails only re-order the queue.
+	ants := scheduleOrder(opts.Ants, opts.Trails)
+
 	pool := newPool(opts.Concurrency)
-	agg, err := pool.run(ctx, opts.Ants, &antRunner{
-		runID: runID,
-		scope: opts.Scope,
-		bus:   bus,
-		area:  area,
+	agg, err := pool.run(ctx, ants, &antRunner{
+		runID:  runID,
+		scope:  opts.Scope,
+		bus:    bus,
+		area:   area,
+		trails: opts.Trails,
 	})
 
 	result := Result{
@@ -127,6 +142,13 @@ type antRunner struct {
 	scope engine.Scope
 	bus   *events.Bus
 	area  *stage.Area
+
+	// trails, when non-nil, is the local trail store an ant writes a marker to
+	// AFTER its verified diff is staged (ADR-0003 — off the critical path). Nil
+	// means trails are off: no marker is written. It is written under the same
+	// serialize() lock the staging append uses so the read-modify-write trail
+	// file never interleaves across workers (single-machine, single-process).
+	trails TrailStore
 }
 
 // outcome is what processing one ant produced, accumulated by the pool.
@@ -194,7 +216,34 @@ func (r *antRunner) process(ctx context.Context, antID int, ant Ant, serialize f
 		Type:        events.TypeAntVerified,
 		AntVerified: &events.AntVerifiedPayload{RunID: r.runID, AntID: antID, Diff: diff, Verify: vr},
 	})
+
+	// 4. Write a trail marker — OFF THE CRITICAL PATH (ADR-0003). This runs ONLY
+	// after the diff is already staged AND ant.verified is already emitted, so a
+	// trail write can never gate a verified fix from being staged. The write is
+	// serialized behind the same per-project lock as the staging append (the
+	// trail file is a read-modify-write append), and ANY error is intentionally
+	// swallowed: a failed marker only means a missed scheduling hint on a future
+	// run — never a failed or unstaged fix. It is a no-op when trails are off
+	// (r.trails nil).
+	r.writeTrail(ant.Finding, serialize)
+
 	return outcome{verified: true}
+}
+
+// writeTrail records a trail marker for a finding whose fix was just verified and
+// staged. It is off the critical path by construction (called after staging +
+// ant.verified) and best-effort: a nil store (trails off) is a no-op, and a
+// write error is swallowed — a trail marker is a scheduling hint, never a
+// correctness gate (ADR-0003). The write goes through serialize so the trail
+// file's read-modify-write never interleaves with another worker's trail or
+// stage write.
+func (r *antRunner) writeTrail(finding engine.Finding, serialize func(func())) {
+	if r.trails == nil {
+		return
+	}
+	serialize(func() {
+		_ = r.trails.RecordTrail(finding.Species, locationClass(finding))
+	})
 }
 
 // emitSkipped publishes ant.skipped carrying the failing check and a reason, so

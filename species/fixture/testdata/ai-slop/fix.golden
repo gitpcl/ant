@@ -1,0 +1,6 @@
+--- a/repo.go
++++ b/repo.go
+@@ -16,2 +16,1 @@
+-	result := a + b
+-	return result
++	return a + b

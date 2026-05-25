@@ -9,6 +9,7 @@ import (
 	"github.com/gitpcl/ant/internal/engine/config"
 	"github.com/gitpcl/ant/internal/engine/species"
 	store "github.com/gitpcl/ant/internal/engine/store"
+	"github.com/gitpcl/ant/internal/engine/telemetry"
 	"github.com/gitpcl/ant/internal/engine/verify"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -35,6 +36,7 @@ func newFixCmd() *cobra.Command {
 	cmd.Flags().Bool("apply", false, "fuse apply for trusted species (effective auto_apply true)")
 	cmd.Flags().Bool("no-branch", false, "with --apply, land on the current branch instead of a new one")
 	cmd.Flags().Bool("ascii", false, "use ASCII glyphs instead of Unicode (also honors NO_COLOR)")
+	cmd.Flags().Bool("trails", false, "bias scheduling by trail density and write trail markers (default off; ADR-0003)")
 	return cmd
 }
 
@@ -121,6 +123,24 @@ func runFix(cmd *cobra.Command, args []string) error {
 		opts.ApplyFused = true
 		opts.Apply = apply.NewApplier(apply.Options{Root: path, NoBranch: boolFlag(cmd, "no-branch")})
 	}
+
+	// Trails (ADR-0003): flag > ant.toml [colony] trails > default off. Only when
+	// enabled does the colony bias scheduling by trail density and write markers;
+	// otherwise opts.Trails stays nil and the run is order-stable. The same local
+	// Store backs trail state — the seam the enterprise shared-trail layer reuses.
+	if cfg.ResolveTrails(cmd.Flags().Changed("trails"), boolFlag(cmd, "trails")) {
+		opts.Trails = st
+	}
+
+	// Telemetry (PRD §8): OFF by default. telemetry.New returns a nil/no-op sink
+	// unless [telemetry] enabled = true, in which case it observes this run's bus
+	// as a passive consumer and folds privacy-safe aggregates (species usage,
+	// verifier catch rate). It never gates the run or touches the --json contract.
+	// Close flushes the aggregate Report through the (v1 no-op) transport; a
+	// telemetry error must never break the fix run, so it is intentionally ignored.
+	tel := telemetry.New(cfg.ResolveTelemetry(), telemetry.NopTransport{}, nil)
+	opts.Telemetry = tel
+	defer func() { _ = tel.Close() }()
 
 	_, err = colony.Drive(cmd.Context(), cmd.OutOrStdout(), opts)
 	return err

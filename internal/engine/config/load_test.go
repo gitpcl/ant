@@ -33,11 +33,19 @@ func TestConfigSchemaParsesEveryField(t *testing.T) {
 	if cfg.Colony.Model == nil || *cfg.Colony.Model != "qwen2.5-coder" {
 		t.Errorf("colony.model = %v, want \"qwen2.5-coder\"", cfg.Colony.Model)
 	}
+	if cfg.Colony.Trails == nil || *cfg.Colony.Trails != true {
+		t.Errorf("colony.trails = %v, want true (ADR-0003 opt-in key parses)", cfg.Colony.Trails)
+	}
 
 	// [ignore]
 	wantIgnore := []string{"vendor/", "node_modules/", "*_generated.go"}
 	if got := cfg.Ignore.Paths; !equalStrings(got, wantIgnore) {
 		t.Errorf("ignore.paths = %v, want %v", got, wantIgnore)
+	}
+
+	// [telemetry] — the opt-in flag parses (default is off; the sample sets it on).
+	if cfg.Telemetry.Enabled == nil || *cfg.Telemetry.Enabled != true {
+		t.Errorf("telemetry.enabled = %v, want true (PRD §8 opt-in key parses)", cfg.Telemetry.Enabled)
 	}
 
 	// [species.<name>] — reachable by species name.
@@ -64,6 +72,72 @@ func TestConfigSchemaParsesEveryField(t *testing.T) {
 	if slop.Enabled == nil || *slop.Enabled != false {
 		t.Errorf("species.ai-slop.enabled = %v, want false", slop.Enabled)
 	}
+}
+
+// TestResolveTrails asserts the flag > ant.toml > default-off resolution chain
+// for the trails opt-in (ADR-0003). Default is OFF; an explicit flag wins over
+// ant.toml in both directions, proving the flag can force trails on OR off.
+func TestResolveTrails(t *testing.T) {
+	on, off := true, false
+
+	t.Run("default off (no flag, no toml)", func(t *testing.T) {
+		var cfg Config
+		if cfg.ResolveTrails(false, false) {
+			t.Error("ResolveTrails default = true, want false (v1 ships embarrassingly-parallel)")
+		}
+	})
+	t.Run("toml on, no flag", func(t *testing.T) {
+		cfg := Config{Colony: Colony{Trails: &on}}
+		if !cfg.ResolveTrails(false, false) {
+			t.Error("ResolveTrails = false, want true ([colony] trails=true with no flag)")
+		}
+	})
+	t.Run("toml off, no flag", func(t *testing.T) {
+		cfg := Config{Colony: Colony{Trails: &off}}
+		if cfg.ResolveTrails(false, false) {
+			t.Error("ResolveTrails = true, want false ([colony] trails=false)")
+		}
+	})
+	t.Run("flag on beats toml off", func(t *testing.T) {
+		cfg := Config{Colony: Colony{Trails: &off}}
+		if !cfg.ResolveTrails(true, true) {
+			t.Error("ResolveTrails = false, want true (--trails beats ant.toml trails=false)")
+		}
+	})
+	t.Run("flag off beats toml on", func(t *testing.T) {
+		cfg := Config{Colony: Colony{Trails: &on}}
+		if cfg.ResolveTrails(true, false) {
+			t.Error("ResolveTrails = true, want false (--trails=false beats ant.toml trails=true)")
+		}
+	})
+}
+
+// TestResolveTelemetry asserts the ant.toml > default-off resolution for the
+// telemetry opt-in (PRD §8). Default is OFF (zero collection); an explicit
+// [telemetry] enabled key wins in both directions. There is intentionally no
+// flag override — telemetry is a deliberate, persistent opt-in, never flipped on
+// by a transient command-line flag.
+func TestResolveTelemetry(t *testing.T) {
+	on, off := true, false
+
+	t.Run("default off (no toml)", func(t *testing.T) {
+		var cfg Config
+		if cfg.ResolveTelemetry() {
+			t.Error("ResolveTelemetry default = true, want false (privacy is the contract; opt-in only)")
+		}
+	})
+	t.Run("toml on", func(t *testing.T) {
+		cfg := Config{Telemetry: Telemetry{Enabled: &on}}
+		if !cfg.ResolveTelemetry() {
+			t.Error("ResolveTelemetry = false, want true ([telemetry] enabled=true)")
+		}
+	})
+	t.Run("toml explicit off", func(t *testing.T) {
+		cfg := Config{Telemetry: Telemetry{Enabled: &off}}
+		if cfg.ResolveTelemetry() {
+			t.Error("ResolveTelemetry = true, want false ([telemetry] enabled=false)")
+		}
+	})
 }
 
 // TestUnknownKeysAreWarnings asserts an unrecognized key (a typo, an unknown

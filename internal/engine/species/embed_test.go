@@ -67,6 +67,45 @@ func TestEmbed_BuiltinsDiscoverableNoDisk(t *testing.T) {
 	}
 }
 
+// TestAISlopShipsDisabled is the ai-slop feature's core assertion against the
+// REAL embedded species (not a synthetic fixture): on a default run (no ant.toml
+// opt-in) the embedded ai-slop resolves DISABLED, so the colony's recipe builder
+// excludes it (it cannot run); and an explicit ant.toml [species.ai-slop]
+// enabled=true flips EffectiveEnabled on, the only path that activates it
+// (ADR-0002 — the fuzzy classifier ships off, opt-in only). The other five
+// built-ins stay enabled by default throughout, so enabling/disabling ai-slop
+// is strictly per-species (no global switch).
+func TestAISlopShipsDisabled(t *testing.T) {
+	r := NewResolver("", NewRegistry())
+
+	// 1. Default run: ai-slop is disabled, every other built-in is enabled.
+	def, err := r.Resolve(config.Config{})
+	if err != nil {
+		t.Fatalf("Resolve default: %v", err)
+	}
+	for _, rv := range def {
+		want := rv.Manifest.Name != "ai-slop" // all but ai-slop ship enabled
+		if rv.EffectiveEnabled != want {
+			t.Errorf("default run: %s EffectiveEnabled = %v, want %v", rv.Manifest.Name, rv.EffectiveEnabled, want)
+		}
+	}
+
+	// 2. Opt-in: ant.toml [species.ai-slop] enabled = true activates it, and only
+	// it — the other species are untouched by the override.
+	on := true
+	enabled, err := r.Resolve(config.Config{Species: map[string]config.Species{
+		"ai-slop": {Enabled: &on},
+	}})
+	if err != nil {
+		t.Fatalf("Resolve with ai-slop enabled: %v", err)
+	}
+	for _, rv := range enabled {
+		if !rv.EffectiveEnabled {
+			t.Errorf("with ai-slop opt-in: %s EffectiveEnabled = false, want true (every species, incl. opted-in ai-slop, is now enabled)", rv.Manifest.Name)
+		}
+	}
+}
+
 // TestEmbed_FSContainsManifests is a lower-level guard that the embed directive
 // actually captured each species.toml, independent of the resolver.
 func TestEmbed_FSContainsManifests(t *testing.T) {

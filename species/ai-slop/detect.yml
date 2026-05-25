@@ -1,9 +1,44 @@
-# Built-in detector rule for the ai-slop species (placeholder).
-# ai-slop is a fuzzy classifier; the real detection (ast-grep heuristics or a
-# command escape hatch) is the author's call in the M4 species-builtin sprint.
-# This placeholder keeps the manifest valid and the embedded species
-# discoverable. The species ships disabled (enabled=false).
+# Detector rule for the ai-slop species (LLM-assisted, fuzzy classifier —
+# ADR-0002 / ADR-0004). ai-slop is the trust-gradient DEMONSTRATOR: the riskiest,
+# fuzziest species, and the reason it ships DISABLED by default (species.toml
+# enabled = false). It runs only when a project explicitly opts in via
+# ant.toml [species.ai-slop] enabled = true.
+#
+# What it nominates (the AI-slop signature this version targets): a REDUNDANT
+# TEMPORARY VARIABLE that is declared and then immediately returned on the very
+# next statement —
+#
+#     result := a + b
+#     return result          // ← nominated: the temp adds nothing
+#
+# This is a recognizable large-language-model tic: models routinely emit a
+# named intermediate that exists only to be returned, where `return a + b`
+# would be clearer. It is detectable as a single structural shape with a
+# relational rule (a `return $V` statement that FOLLOWS a `$V := $EXPR`
+# declaration of the same variable), so it rides the zero-runtime-dependency
+# ast-grep default detector (ADR-0004 Decision 5) — no Semgrep/Python, no
+# `command` escape hatch needed for this heuristic.
+#
+# Why it ships DISABLED (ADR-0002 / ADR-0004 confidence tiers): this is a
+# CANDIDATE-tier, deliberately FUZZY nomination. A redundant-looking temp is
+# often perfectly legitimate — it documents intent, it is reused, or a debugger
+# breakpoint wants it. ast-grep cannot tell "needless" from "intentional"; it
+# only nominates the shape. The false-positive rate is therefore high by design,
+# which is exactly why enabling it by default would surface noisy findings on
+# first contact and undermine trust (PRD §6.1, §10). Shipped off, opt-in only.
+# When a project DOES enable it, the verify gate still applies: the LLM fix is
+# staged for human review (auto_apply = false) and only kept if it compiles,
+# keeps the affected tests green, and clears the detector.
+#
+# severity is `warning` so `ast-grep scan` exits 0 on a match (the adapter
+# treats a non-zero exit as a run error — see internal/engine/detect/astgrep.go).
+# The product-facing severity ("low") lives in species.toml; this token only
+# governs the ast-grep run, matching every other built-in species' convention.
 id: ai-slop
 language: go
+severity: warning
+message: 'Redundant temporary variable declared and immediately returned — a low-signal AI-boilerplate tic; returning the expression directly is usually clearer (candidate-tier, fuzzy)'
 rule:
-  pattern: "// TODO: $$$"
+  pattern: return $V
+  follows:
+    pattern: $V := $EXPR

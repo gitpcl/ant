@@ -152,6 +152,19 @@ type StagedRecord struct {
 	Mark    Mark         `json:"mark"`
 }
 
+// TrailKey identifies one flag-gated trail marker (ADR-0003, TECHSPEC §8.2): the
+// species that produced a verified fix and the code-location CLASS the fix
+// touched (the directory of the finding's file — related findings cluster by
+// location). It is the key the colony's trail scheduler biases on and the local
+// Store persists density against. It lives in engine (a shared data type, like
+// Finding) so the colony (which defines the TrailStore interface) and the store
+// (which persists it) agree on the key without an import cycle. The cross-repo /
+// shared form of trails is enterprise scope (PRD §9) and not represented here.
+type TrailKey struct {
+	Species       string `json:"species"`
+	LocationClass string `json:"locationClass"`
+}
+
 // Run is the persisted record of a single colony invocation. The Store rounds a
 // Run trip to disk so state survives process restarts and so the enterprise
 // service-backed Store can plug into the same shape (TECHSPEC §5.4).
