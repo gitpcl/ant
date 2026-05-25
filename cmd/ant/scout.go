@@ -7,6 +7,7 @@ import (
 	"github.com/gitpcl/ant/internal/engine/config"
 	"github.com/gitpcl/ant/internal/engine/detect"
 	"github.com/gitpcl/ant/internal/engine/scout"
+	"github.com/gitpcl/ant/internal/engine/species"
 	"github.com/spf13/cobra"
 )
 
@@ -70,9 +71,20 @@ func runScout(cmd *cobra.Command, args []string) error {
 		Species: stringSlice(cmd, "ant"),
 	}
 
+	// Materialize the embedded built-in rule files to disk so the ast-grep
+	// detector (a shell-out plugin boundary, TECHSPEC §2) can read them. The
+	// engine owns the extraction (species.MaterializeBuiltinRules over the
+	// go:embed tree); the CLI just points the detector set at the resulting root
+	// and cleans it up when the run ends.
+	rulesRoot, cleanupRules, err := species.MaterializeBuiltinRules()
+	if err != nil {
+		return err // operational (exit 2): cannot stage built-in rules
+	}
+	defer cleanupRules()
+
 	opts := scout.Options{
 		Scope:          scope,
-		Detectors:      detect.Builtins(builtinRulesRoot),
+		Detectors:      detect.Builtins(rulesRoot),
 		SeverityFilter: severityFilter,
 		AntFilter:      scope.Species,
 	}
@@ -84,12 +96,6 @@ func runScout(cmd *cobra.Command, args []string) error {
 
 	return applyFailOn(failOn, result)
 }
-
-// builtinRulesRoot is where the built-in species rule files resolve from. It is
-// empty in this sprint (the embedded species tree lands in a later sprint); the
-// detector receives the bare relative rule path, which is sufficient for the
-// recorded-fixture tests and surfaces a clear ast-grep error otherwise.
-const builtinRulesRoot = ""
 
 // applyFailOn implements the --fail-on CI gate (TECHSPEC §7.1): if the highest
 // finding severity meets or exceeds the threshold, return a findingsGateError

@@ -64,7 +64,17 @@ func runFix(cmd *cobra.Command, args []string) error {
 		RawModelEndpoint: os.Getenv("ANT_RAWMODEL_ENDPOINT"),
 		RawModelAPIKey:   os.Getenv("ANT_RAWMODEL_API_KEY"),
 	}
-	recipes, detectors, err := colony.BuildRecipes(resolved, antFilter, builtinRulesRoot, rc)
+
+	// Materialize the embedded built-in rule files so the ast-grep detector (a
+	// shell-out plugin boundary, TECHSPEC §2) can read them; the engine owns the
+	// extraction. User species already live on disk and resolve in place.
+	rulesRoot, cleanupRules, err := species.MaterializeBuiltinRules()
+	if err != nil {
+		return err // operational (exit 2): cannot stage built-in rules
+	}
+	defer cleanupRules()
+
+	recipes, detectors, err := colony.BuildRecipes(resolved, antFilter, rulesRoot, rc)
 	if err != nil {
 		return err
 	}

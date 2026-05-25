@@ -1,0 +1,6 @@
+--- a/repo.go
++++ b/repo.go
+@@ -9,3 +9,0 @@
+-func deadHelper(n int) int {
+-	return n * 999
+-}

@@ -70,7 +70,11 @@ func BuildRecipes(resolved []species.Resolved, antFilter []string, rulesRoot str
 
 // buildDetector constructs the species' detector. Only ast-grep is wired in v1
 // (the command escape hatch lands later); the rule path is resolved under
-// rulesRoot. Mirrors detect.Builtins' per-species construction.
+// rulesRoot. The manifest's Detector.Rule is relative to the species FOLDER
+// (e.g. "detect.yml"), and the materialized built-in tree lays rules out as
+// <rulesRoot>/<species>/<rule> (mirroring detect.Builtins' "unused-import/detect.yml"
+// table), so the species name is joined in between. With an empty rulesRoot the
+// bare manifest-relative path is used (the recorded-fixture path needs no disk file).
 func buildDetector(m species.Manifest, rulesRoot string) (engine.Detector, error) {
 	d := m.Detector
 	if d.Kind == "" {
@@ -80,7 +84,7 @@ func buildDetector(m species.Manifest, rulesRoot string) (engine.Detector, error
 	case species.DetectKindASTGrep, "":
 		rule := d.Rule
 		if rulesRoot != "" && rule != "" {
-			rule = rulesRoot + "/" + rule
+			rule = rulesRoot + "/" + m.Name + "/" + rule
 		}
 		return detect.NewASTGrep(m.Name, rule), nil
 	default:

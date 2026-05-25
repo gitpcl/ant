@@ -1,7 +1,28 @@
-# Built-in detector rule for the dead-code species (placeholder).
-# Real rule body lands in the M2 species-builtin sprint. Minimal-but-valid for
-# Sprint 004 so the manifest loads from the embedded tree.
+# Detector rule for the dead-code species (deterministic, ADR-0002).
+#
+# ast-grep is a SYNTACTIC matcher (TECHSPEC §2) and cannot perform whole-program
+# reachability analysis, so the species targets a declaration EXPLICITLY MARKED
+# dead with a `//ant:dead-code` doc comment — the same convention shape Go itself
+# uses for tool directives (`//go:build`, `//lint:ignore`). A developer or an
+# upstream pass annotates a provably-unreferenced unexported declaration; this
+# species mechanically removes it.
+#
+# The matched node is a TOP-LEVEL function declaration immediately following an
+# `//ant:dead-code` comment. Matching the whole `func` (which begins at column 0)
+# means the captured text is the declaration verbatim, so the deterministic
+# delete-match fix deletes exactly those lines. The verifier gate makes removal
+# safe: `compile` rebuilds the patched tree (a still-referenced function would
+# break the build and the fix is skipped — TECHSPEC §5.3) and `detector-clears`
+# re-runs this rule and requires zero matches afterward.
 id: dead-code
 language: go
+severity: warning
+message: 'Declaration marked //ant:dead-code is unreferenced and can be removed'
 rule:
-  pattern: if false { $$$ }
+  pattern: |
+    func $NAME($$$PARAMS) $RET {
+      $$$BODY
+    }
+  follows:
+    kind: comment
+    regex: 'ant:dead-code'

@@ -1,0 +1,13 @@
+# Ant runtime state (runs + staged diffs) — never committed
+.ant/
+
+# Built binary (root-anchored so it never matches cmd/ant/)
+/ant
+
+# Go build/test artifacts
+*.test
+*.out
+coverage.*
+
+# OS / editor cruft
+.DS_Store
