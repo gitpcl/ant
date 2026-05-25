@@ -1,6 +1,34 @@
-# Built-in detector rule for the missing-await species (placeholder).
-# Real rule body lands in the M3 species-builtin sprint.
+# Detector rule for the missing-await species (LLM-assisted, ADR-0002 / ADR-0004).
+#
+# Go interpretation (DOCUMENTED — "await" is a JS/TS concept; Go has none):
+# the species name's intent is "async work whose result is never awaited /
+# synchronized." The closest meaningful Go smell is a FIRE-AND-FORGET goroutine
+# spawned inside a loop with NO synchronization — no WaitGroup, no result channel,
+# no errgroup. The function returns before the goroutines finish, so their results
+# are dropped, and any shared state they touch is written concurrently without
+# coordination (a data race). This rule nominates exactly that shape: a bare
+# `go func(...) { ... }(...)` as the loop body of a range loop.
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: ast-grep cannot prove
+# the goroutine's result is actually needed or that the absence of a WaitGroup is
+# a bug (some fire-and-forget is intentional) — it structurally NOMINATES the
+# un-awaited-goroutine smell. The verify gate confirms it: the LLM fix collects
+# results per index, waits on a sync.WaitGroup, then aggregates; then `compile` +
+# `tests:affected` (the suite runs with -race) + `detector-clears` prove the work
+# is now awaited and correct. After the fix the loop body is `wg.Add(1); go func`
+# (no longer a bare `go func` as the whole body), so this rule matches zero times.
+#
+# severity is `warning` so `ast-grep scan` exits 0 on a match (the adapter treats
+# a non-zero exit as a run error). auto_apply is false: a model edit to
+# concurrency code is always staged for human review even though the gate passes.
 id: missing-await
-language: typescript
+language: go
+severity: warning
+message: 'Goroutine spawned in a loop is never awaited/synchronized (no WaitGroup/channel); its result is dropped and shared writes race'
 rule:
-  pattern: $OBJ.$METHOD($$$)
+  pattern: |
+    for $_, $V := range $COLL {
+      go func($$$PARAMS) {
+        $$$BODY
+      }($$$ARGS)
+    }

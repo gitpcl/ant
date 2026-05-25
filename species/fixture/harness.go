@@ -57,6 +57,53 @@ func DeterministicFixer(m species.Manifest) (engine.Fixer, error) {
 	return fix.NewDeterministic(m.Fix.Transform), nil
 }
 
+// RecordedFixer returns a FixerFactory for LLM-assisted species (ADR-0002:
+// n+1-query, missing-await, nil-deref). It stands in for a live model in CI
+// (TECHSPEC §10 — "LLM species use recorded fixer responses in tests; no live
+// model in CI") by returning a fixer that always emits the SAME pre-authored
+// unified-diff patch — the response a correctly-prompted model would produce for
+// the fixture's single finding. The harness then drives that recorded patch
+// through the REAL verifier gate (compile + tests:affected + detector-clears),
+// so the proof is genuine: the recorded fix is only accepted if it actually
+// compiles, passes the affected tests, and clears the detector. The model is
+// stubbed; the safety gate is not.
+//
+// It validates the manifest is an llm species so a deterministic species can
+// never be silently driven through a recorded LLM response (mirroring the guard
+// in DeterministicFixer). patch is the file path + unified-diff body to apply.
+func RecordedFixer(patch engine.FileDiff) FixerFactory {
+	return func(m species.Manifest) (engine.Fixer, error) {
+		if m.Fix.Kind != species.FixKindLLM {
+			return nil, fmt.Errorf("fixture: RecordedFixer used for non-llm species %q (fix kind %q)", m.Name, m.Fix.Kind)
+		}
+		return &recordedFixer{species: m.Name, patch: patch}, nil
+	}
+}
+
+// recordedFixer is the in-test stand-in for an LLM Fixer: it returns a fixed,
+// pre-recorded ProposedDiff regardless of the task, so the harness exercises the
+// detect→fix→verify→golden path without a network or a model. Provenance is
+// marked "recorded (<species>)" so a golden/diff can never be mistaken for a
+// live-model run.
+type recordedFixer struct {
+	species string
+	patch   engine.FileDiff
+}
+
+// compile-time assertion that recordedFixer satisfies engine.Fixer.
+var _ engine.Fixer = (*recordedFixer)(nil)
+
+// Fix returns the recorded patch as the proposed diff for the task. It is pure
+// and stateless (the one-task adapter contract, TECHSPEC §10): every call yields
+// the same recorded response, which the real verifier gate then accepts only if
+// it genuinely compiles, passes affected tests, and clears the detector.
+func (f *recordedFixer) Fix(_ context.Context, _ engine.FixTask) (engine.ProposedDiff, error) {
+	return engine.ProposedDiff{
+		Files: []engine.FileDiff{f.patch},
+		Fixer: fmt.Sprintf("recorded (%s)", f.species),
+	}, nil
+}
+
 // Case describes one species fixture run. SpeciesDir is the on-disk species
 // folder (its species.toml + detect.yml are loaded through the production
 // loader/registry); RepoDir is the testdata repo seeded with the target smell;
@@ -233,10 +280,10 @@ func runVerify(t *testing.T, c Case, reg *species.Registry, m species.Manifest, 
 
 // buildGate composes the manifest's declared verifier checks into the same
 // skip-and-surface gate the colony runs (verify.NewGate prepends diff-bounded).
-// Only the M2 deterministic checks (compile, detector-clears) are wired here;
-// tests:affected (M3) is recognized but routed to a clear "not wired in harness"
-// failure so an M3 species author extends this one spot rather than re-rolling a
-// gate.
+// The M2 deterministic checks (compile, detector-clears) and the M3 tests:affected
+// check (the gate that makes propose-only LLM fixes safe — ADR-0002) are wired
+// here against the REAL production verifiers, so an LLM species fixture proves the
+// genuine detect→fix→verify path, not a stub gate.
 func buildGate(t *testing.T, reg *species.Registry, m species.Manifest, detector engine.Detector, limits verify.Limits, f engine.Finding) engine.Verifier {
 	t.Helper()
 	rest := make([]engine.Verifier, 0, len(m.Verify.Checks))
@@ -246,6 +293,15 @@ func buildGate(t *testing.T, reg *species.Registry, m species.Manifest, detector
 			rest = append(rest, verify.NewCompile(nil)) // real `go build ./...`
 		case verify.CheckDetectorClears:
 			rest = append(rest, verify.NewDetectorClears(detector, f))
+		case verify.CheckTestsAffected:
+			// The REAL tests:affected verifier (Sprint 010, TECHSPEC §5.3.1). A nil
+			// cache omits the coverage-map strategy, so it degrades through
+			// import-graph → package-fallback and runs ONLY the affected package's
+			// tests in a scratch copy of the post-fix tree — no live model, no whole
+			// suite. This is the gate that makes the LLM species' propose-only fixes
+			// trustworthy (ADR-0002); the M3 LLM fixtures depend on it being wired to
+			// the genuine verifier, not a stub.
+			rest = append(rest, verify.NewTestsAffected(verify.AffectedConfig{}))
 		case verify.CheckDiffBounded:
 			// diff-bounded is prepended by NewGate; skip a duplicate here.
 		default:

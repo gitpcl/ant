@@ -1,6 +1,32 @@
-# Built-in detector rule for the n+1-query species (placeholder).
-# Real rule body lands in the M3 species-builtin sprint.
+# Detector rule for the n+1-query species (LLM-assisted, ADR-0002 / ADR-0004).
+#
+# Go interpretation: the N+1 query pattern is issuing one lookup/query call PER
+# loop iteration instead of one batched call for the whole collection. The
+# canonical Go shape is a `for ... := range coll { ... v := call(item) ... }`
+# where a per-row fetch (`v := lookupUser(id)`) sits inside the range loop. This
+# rule nominates that shape: a short-variable declaration bound to a single-arg
+# call of the loop's range variable, inside a range loop.
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: ast-grep cannot prove
+# the call is a database/network round trip (it could be a pure function) — it
+# structurally NOMINATES the per-iteration-call smell. The verify gate confirms
+# it: the LLM fix hoists the call to a single batched query before the loop, then
+# `compile` + `tests:affected` + `detector-clears` prove behavior is preserved
+# and the loop no longer issues a per-iteration call (so this rule then matches
+# zero times — detector-clears passes).
+#
+# Constraining the body to a `$LV := $CALL($V)` short-var declaration (not a bare
+# assignment / append) keeps the match on the per-row-fetch shape and off
+# unrelated range loops, including a batched helper's internal `out = append(...)`
+# loop. severity is `warning` so `ast-grep scan` exits 0 on a match.
 id: n+1-query
 language: go
+severity: warning
+message: 'Query/lookup call issued once per loop iteration (N+1); batch it into a single query before the loop'
 rule:
-  pattern: for $_ := range $_ { $$$ }
+  pattern: |
+    for $_, $V := range $COLL {
+      $$$BEFORE
+      $LV := $CALL($V)
+      $$$AFTER
+    }

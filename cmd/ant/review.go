@@ -1,6 +1,8 @@
 package main
 
 import (
+	"sort"
+
 	"github.com/gitpcl/ant/internal/engine/review"
 	"github.com/gitpcl/ant/internal/engine/stage"
 	store "github.com/gitpcl/ant/internal/engine/store"
@@ -54,5 +56,46 @@ func runReview(cmd *cobra.Command, args []string) error {
 		Ascii: asciiEnabled(cmd),
 		Color: colorEnabled(),
 	}
-	return review.Run(cmd.Context(), cmd.OutOrStdout(), area, opts)
+
+	// Collect the species whose output is being reviewed BEFORE the walk, so a
+	// completed review pass can lift the freshly-installed propose-only override
+	// (TECHSPEC §6.3) for exactly those species. A review pass over a species'
+	// output is the one human check that earns it its configured trust.
+	reviewed := reviewedSpecies(area)
+
+	if err := review.Run(cmd.Context(), cmd.OutOrStdout(), area, opts); err != nil {
+		return err
+	}
+
+	// One review pass completed: record each reviewed species so its CONFIGURED
+	// trust applies on subsequent runs. A marking failure is non-fatal (the
+	// override simply stays conservative — the safe direction).
+	if len(reviewed) > 0 {
+		_ = st.MarkReviewed(reviewed...)
+	}
+	return nil
+}
+
+// reviewedSpecies returns the distinct species names that own the staged records
+// in area, in sorted order. It is the set whose output a completed `ant review`
+// pass walked — the species that have earned their configured trust under the
+// freshly-installed override. A load error yields no names (the override stays
+// conservative rather than guessing).
+func reviewedSpecies(area *stage.Area) []string {
+	records, err := area.ListRecords()
+	if err != nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	for _, rec := range records {
+		if rec.Finding.Species != "" {
+			seen[rec.Finding.Species] = struct{}{}
+		}
+	}
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

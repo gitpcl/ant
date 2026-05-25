@@ -1,0 +1,13 @@
+--- a/repo.go
++++ b/repo.go
+@@ -32,5 +32,6 @@
+-	var names []string
+-	for _, id := range ids {
+-		u := lookupUser(id)
+-		names = append(names, u.Name)
+-	}
++	users := lookupUsers(ids)
++	var names []string
++	for _, u := range users {
++		names = append(names, u.Name)
++	}

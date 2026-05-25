@@ -1,0 +1,26 @@
+--- a/repo.go
++++ b/repo.go
+@@ -1,1 +1,3 @@
+ package missingawait
++
++import "sync"
+@@ -16,6 +18,11 @@
+ 	var total int
+-	for _, n := range nums {
+-		go func(n int) {
+-			total += square(n)
+-		}(n)
+-	}
++	results := make([]int, len(nums))
++	var wg sync.WaitGroup
++	for i, n := range nums {
++		wg.Add(1)
++		go func(i, n int) {
++			defer wg.Done()
++			results[i] = square(n)
++		}(i, n)
++	}
++	wg.Wait()
++	for _, r := range results {
++		total += r
++	}

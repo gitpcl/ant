@@ -1,7 +1,7 @@
 name        = "missing-await"
-description = "Detects async calls whose promise is not awaited or handled"
+description = "Detects a goroutine spawned in a loop that is never awaited/synchronized (the Go analogue of a missing await — see detect.yml)"
 severity    = "medium"
-languages   = ["ts"]
+languages   = ["go"]
 auto_apply  = false
 enabled     = true
 

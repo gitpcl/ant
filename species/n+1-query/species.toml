@@ -1,7 +1,7 @@
 name        = "n+1-query"
-description = "Detects 1+N query patterns in loops"
+description = "Detects a lookup/query call issued once per loop iteration (the N+1 query pattern) — see detect.yml"
 severity    = "high"
-languages   = ["go", "ts"]
+languages   = ["go"]
 auto_apply  = false
 enabled     = true
 

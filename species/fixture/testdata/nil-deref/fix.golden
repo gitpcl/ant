@@ -1,0 +1,14 @@
+--- a/repo.go
++++ b/repo.go
+@@ -22,4 +22,8 @@
+-func Balance(id int) int {
+-	acct, _ := loadAccount(id)
+-	return acct.Balance
+-}
++func Balance(id int) (int, error) {
++	acct, err := loadAccount(id)
++	if err != nil {
++		return 0, err
++	}
++	return acct.Balance, nil
++}

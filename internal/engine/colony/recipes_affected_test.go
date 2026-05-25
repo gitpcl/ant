@@ -18,18 +18,21 @@ import (
 // affected tests" and passes WITHOUT a toolchain — the point here is that the
 // tests:affected CheckResult appears in the gate output at all.
 func TestBuildRecipesWiresTestsAffected(t *testing.T) {
-	resolved := []species.Resolved{{
-		Manifest: species.Manifest{
-			Name:   "n+1-query",
-			Detect: species.Detect{Kind: species.DetectKindASTGrep, Rule: "detect.yml"},
-			Fix:    species.Fix{Kind: species.FixKindLLM, Prompt: "fix.md"},
-			Verify: species.Verify{Checks: []string{"tests:affected"}},
+	decisions := []species.TrustDecision{{
+		Resolved: species.Resolved{
+			Manifest: species.Manifest{
+				Name:   "n+1-query",
+				Detect: species.Detect{Kind: species.DetectKindASTGrep, Rule: "detect.yml"},
+				Fix:    species.Fix{Kind: species.FixKindLLM, Prompt: "fix.md"},
+				Verify: species.Verify{Checks: []string{"tests:affected"}},
+			},
+			EffectiveEnabled:   true,
+			EffectiveAutoApply: false,
 		},
-		EffectiveEnabled:   true,
 		EffectiveAutoApply: false,
 	}}
 
-	recipes, _, err := BuildRecipes(resolved, nil, "", RecipeConfig{Limits: verify.DefaultLimits()})
+	recipes, _, err := BuildRecipes(decisions, nil, "", RecipeConfig{Limits: verify.DefaultLimits()})
 	if err != nil {
 		t.Fatalf("BuildRecipes: %v", err)
 	}

@@ -1,7 +1,7 @@
 name        = "nil-deref"
-description = "Detects potential nil/null pointer dereferences"
+description = "Detects a pointer used from a fallible call whose error was discarded — a likely nil dereference (see detect.yml)"
 severity    = "high"
-languages   = ["go", "ts"]
+languages   = ["go"]
 auto_apply  = false
 enabled     = true
 

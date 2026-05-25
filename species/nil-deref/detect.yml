@@ -1,6 +1,29 @@
-# Built-in detector rule for the nil-deref species (placeholder).
-# Real rule body lands in the M3 species-builtin sprint.
+# Detector rule for the nil-deref species (LLM-assisted, ADR-0002 / ADR-0004).
+#
+# Go interpretation: the classic Go nil-dereference smell is using a pointer
+# returned from a fallible call WITHOUT checking the error that came back with
+# it. When a function returns `(*T, error)` and the caller discards the error
+# with the blank identifier (`v, _ := call()`), v can be nil on the error path,
+# and any later `v.Field` / `v.Method()` panics with a nil dereference. This rule
+# nominates exactly that shape: a short-variable declaration whose second result
+# is discarded with `_`.
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: ast-grep cannot prove
+# the discarded result is an error, nor that v is later dereferenced on the nil
+# path — it structurally NOMINATES the smell. The verify gate confirms it: the
+# LLM fix binds and checks the error, then `compile` + `tests:affected` +
+# `detector-clears` prove the fix is correct (the post-fix `v, err := call()`
+# no longer matches this rule, so detector-clears reports zero matches).
+#
+# auto_apply is false (species.toml): a model edit to live error-handling logic
+# is always staged for human review even though the gate passes.
+# detect.yml severity is `warning` so `ast-grep scan` exits 0 on a match (the
+# adapter treats a non-zero exit as a run error). The species' product-facing
+# severity ("high") is declared in species.toml; this token only governs the
+# ast-grep run, matching the deterministic species' convention (unused-import).
 id: nil-deref
 language: go
+severity: warning
+message: 'Result discarded with `_` from a fallible call; the returned pointer may be nil-dereferenced — check and handle the error'
 rule:
-  pattern: $PTR.$FIELD
+  pattern: $V, _ := $CALL($$$ARGS)

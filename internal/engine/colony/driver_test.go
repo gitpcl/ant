@@ -9,9 +9,46 @@ import (
 
 	"github.com/gitpcl/ant/internal/engine"
 	"github.com/gitpcl/ant/internal/engine/events"
+	"github.com/gitpcl/ant/internal/engine/species"
 	"github.com/gitpcl/ant/internal/engine/stage"
 	local "github.com/gitpcl/ant/internal/engine/store"
+	"github.com/gitpcl/ant/internal/engine/verify"
 )
+
+// fakeTrustStore is an in-memory species.TrustStore for the colony integration
+// test, so the trust authority can be driven without touching disk.
+type fakeTrustStore struct{ state map[string]species.TrustState }
+
+func (f *fakeTrustStore) LoadTrust() (map[string]species.TrustState, error) {
+	if f.state == nil {
+		f.state = map[string]species.TrustState{}
+	}
+	return f.state, nil
+}
+
+func (f *fakeTrustStore) MarkSeen(names ...string) error {
+	if f.state == nil {
+		f.state = map[string]species.TrustState{}
+	}
+	for _, n := range names {
+		st := f.state[n]
+		st.Seen = true
+		f.state[n] = st
+	}
+	return nil
+}
+
+func (f *fakeTrustStore) MarkReviewed(names ...string) error {
+	if f.state == nil {
+		f.state = map[string]species.TrustState{}
+	}
+	for _, n := range names {
+		st := f.state[n]
+		st.Reviewed = true
+		f.state[n] = st
+	}
+	return nil
+}
 
 // fakeDetector reports a fixed set of findings for a species (no live ast-grep).
 type fakeDetector struct{ findings []engine.Finding }
@@ -189,4 +226,103 @@ type errDetector struct{}
 
 func (errDetector) Detect(context.Context, engine.Scope) ([]engine.Finding, error) {
 	return nil, &engine.DetectorUnavailableError{Detector: "ast-grep", Binary: "ast-grep"}
+}
+
+// recordingSeenMarker captures which species the driver recorded as "seen on a
+// previous run" after the colony scheduled — proving the freshly-installed
+// override's install-tracking is wired through the apply path.
+type recordingSeenMarker struct{ seen []string }
+
+func (m *recordingSeenMarker) MarkSeen(names ...string) error {
+	m.seen = append(m.seen, names...)
+	return nil
+}
+
+// TestFreshOverrideEndToEndUnderApply is the CRITICAL trust integration test: it
+// drives the FULL trust authority (species.ResolveTrust) → BuildRecipes → Drive
+// path and proves that under --apply a FRESHLY-INSTALLED species whose manifest
+// says auto_apply=true is STILL not auto-landed on its first run, while a
+// trusted built-in IS — in the same run. It also asserts the driver records both
+// participating species as seen after the run (the install-tracking signal the
+// override reads next time).
+func TestFreshOverrideEndToEndUnderApply(t *testing.T) {
+	// Two configured-auto-apply species: a vetted BUILT-IN (exempt from the
+	// override) and an INSTALLED third-party species (subject to it). Both have
+	// EffectiveAutoApply=true coming out of Sprint-004 resolution.
+	resolved := []species.Resolved{
+		{Manifest: species.Manifest{Name: "builtin-trusted", Detect: species.Detect{Kind: species.DetectKindASTGrep, Rule: "d.yml"}, Fix: species.Fix{Kind: species.FixKindDeterministic, Transform: "delete-match"}},
+			Origin: species.OriginBuiltin, EffectiveAutoApply: true, EffectiveEnabled: true},
+		{Manifest: species.Manifest{Name: "fresh-thirdparty", Detect: species.Detect{Kind: species.DetectKindASTGrep, Rule: "d.yml"}, Fix: species.Fix{Kind: species.FixKindDeterministic, Transform: "delete-match"}},
+			Origin: species.OriginUser, EffectiveAutoApply: true, EffectiveEnabled: true},
+	}
+
+	// The trust authority with an empty store → the third-party species is fresh.
+	decisions, err := species.ResolveTrust(resolved, &fakeTrustStore{})
+	if err != nil {
+		t.Fatalf("ResolveTrust: %v", err)
+	}
+	recipes, _, err := BuildRecipes(decisions, nil, "", RecipeConfig{Limits: verify.DefaultLimits()})
+	if err != nil {
+		t.Fatalf("BuildRecipes: %v", err)
+	}
+	// Sanity: the recipe trust reflects the override, not the bare config.
+	if !recipes["builtin-trusted"].AutoApply {
+		t.Fatal("built-in trusted recipe should have AutoApply true")
+	}
+	if recipes["fresh-thirdparty"].AutoApply {
+		t.Fatal("freshly-installed third-party recipe MUST have AutoApply false (override) even though its manifest auto_apply=true")
+	}
+
+	// Drive both findings under --apply. Override the recipes' real (delete-match)
+	// fixers/verifiers with passing fakes so the test needs no toolchain — the
+	// AutoApply flags computed above are what gates apply.
+	det := []engine.NamedDetector{
+		{Species: "builtin-trusted", Detector: fakeDetector{findings: []engine.Finding{{Species: "builtin-trusted", File: "vetted.go", Span: engine.Span{StartLine: 1}, Severity: engine.SeverityHigh}}}},
+		{Species: "fresh-thirdparty", Detector: fakeDetector{findings: []engine.Finding{{Species: "fresh-thirdparty", File: "untrusted.go", Span: engine.Span{StartLine: 1}, Severity: engine.SeverityHigh}}}},
+	}
+	driveRecipes := map[string]SpeciesRecipe{
+		"builtin-trusted":  {Fixer: fakeFixer{fixer: "deterministic"}, NewVerifier: func(engine.Finding) engine.Verifier { return passVerifier{} }, AutoApply: recipes["builtin-trusted"].AutoApply},
+		"fresh-thirdparty": {Fixer: fakeFixer{fixer: "deterministic"}, NewVerifier: func(engine.Finding) engine.Verifier { return passVerifier{} }, AutoApply: recipes["fresh-thirdparty"].AutoApply},
+	}
+	opts := newDriveOpts(t, driveRecipes, det)
+	applier := &recordedApplier{}
+	marker := &recordingSeenMarker{}
+	opts.Apply = applier
+	opts.ApplyFused = true
+	opts.SeenSpecies = []string{"builtin-trusted", "fresh-thirdparty"}
+	opts.SeenMarker = marker
+
+	var buf bytes.Buffer
+	if _, err := Drive(context.Background(), &buf, opts); err != nil {
+		t.Fatalf("Drive: %v", err)
+	}
+
+	// Only the vetted built-in auto-landed; the freshly-installed species stayed
+	// staged for review despite its manifest auto_apply=true.
+	if len(applier.landed) != 1 {
+		t.Fatalf("expected exactly 1 auto-landed diff, got %d", len(applier.landed))
+	}
+	if applier.landed[0].Finding.Species != "builtin-trusted" {
+		t.Errorf("the freshly-installed species must NOT auto-land; landed %q", applier.landed[0].Finding.Species)
+	}
+
+	// The freshly-installed species' verified diff is still staged (propose-only).
+	records, err := stage.New(opts.Store, "fixrun").ListRecords()
+	if err != nil {
+		t.Fatalf("ListRecords: %v", err)
+	}
+	var thirdPartyStaged bool
+	for _, rec := range records {
+		if rec.Finding.Species == "fresh-thirdparty" {
+			thirdPartyStaged = true
+		}
+	}
+	if !thirdPartyStaged {
+		t.Error("the freshly-installed species' verified diff must remain staged for review")
+	}
+
+	// Both participating species recorded as seen — the install signal next run.
+	if len(marker.seen) != 2 {
+		t.Errorf("driver should record both species as seen after the run; got %v", marker.seen)
+	}
 }

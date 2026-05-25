@@ -25,20 +25,27 @@ type RecipeConfig struct {
 	RawModelAPIKey   string
 }
 
-// BuildRecipes turns the resolved, enabled species into the driver's recipe map
-// and the matching detector set, both honoring the --ant filter. It is the
+// BuildRecipes turns the trust-decided, enabled species into the driver's recipe
+// map and the matching detector set, both honoring the --ant filter. It is the
 // composition root for `ant fix`: it maps each species' manifest fix kind to a
 // concrete Fixer (deterministic → fix.NewDeterministic; llm → fix.NewRawModel)
 // and its declared verifier checks to a per-finding gate (diff-bounded first per
-// TECHSPEC §8.1). The effective auto_apply flows straight from resolution
-// (ADR-0002) so only trusted species can auto-land under --apply.
+// TECHSPEC §8.1).
+//
+// CRITICAL — trust: the recipe's AutoApply is the FINAL effective trust from the
+// single trust authority (species.ResolveTrust / EffectiveTrust), NOT the bare
+// Sprint-004 config value. That decision already folds in the freshly-installed
+// propose-only override (TECHSPEC §6.3), so a freshly-installed species cannot
+// auto-land under --apply even if its manifest/ant.toml says auto_apply=true.
+// The driver's fuseApply gates on exactly this AutoApply flag, so the override
+// is enforced at the apply boundary by construction.
 //
 // rulesRoot is where ast-grep rule files resolve from (the embedded species
 // tree, prepended to each manifest's rule path). A species whose fix kind cannot
 // be wired (e.g. an llm species with no rawmodel endpoint configured) still gets
 // a recipe whose Fixer returns a clear error, which the colony surfaces as a
 // visible ant.skipped — never a silent drop (PRD §6.3).
-func BuildRecipes(resolved []species.Resolved, antFilter []string, rulesRoot string, rc RecipeConfig) (map[string]SpeciesRecipe, []engine.NamedDetector, error) {
+func BuildRecipes(decisions []species.TrustDecision, antFilter []string, rulesRoot string, rc RecipeConfig) (map[string]SpeciesRecipe, []engine.NamedDetector, error) {
 	allow := filterSet(antFilter)
 	recipes := make(map[string]SpeciesRecipe)
 	var detectors []engine.NamedDetector
@@ -49,7 +56,8 @@ func BuildRecipes(resolved []species.Resolved, antFilter []string, rulesRoot str
 	// in the composition root — the single place that runs once per `ant fix`.
 	coverCache := testselect.NewProfileCache(testselect.NewGoProfileGenerator())
 
-	for _, r := range resolved {
+	for _, d := range decisions {
+		r := d.Resolved
 		m := r.Manifest
 		if !r.EffectiveEnabled {
 			continue // disabled species (e.g. ai-slop) do not run
@@ -69,7 +77,7 @@ func BuildRecipes(resolved []species.Resolved, antFilter []string, rulesRoot str
 		recipes[m.Name] = SpeciesRecipe{
 			Fixer:       buildFixer(m, rc),
 			NewVerifier: verifierBuilder(m, det, rc.Limits, coverCache),
-			AutoApply:   r.EffectiveAutoApply,
+			AutoApply:   d.EffectiveAutoApply, // FINAL trust decision (post freshly-installed override)
 		}
 	}
 	return recipes, detectors, nil

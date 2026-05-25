@@ -59,6 +59,16 @@ type Applier interface {
 	ApplyRecords(ctx context.Context, bus *events.Bus, runID string, records []engine.StagedRecord) (int, error)
 }
 
+// SeenMarker records that a set of species participated in a completed run, so
+// the NEXT run's freshly-installed trust override knows they were "present on a
+// previous run" (TECHSPEC §6.3). The local store satisfies it (MarkSeen);
+// keeping it a one-method interface (defined where used) keeps the driver free
+// of the concrete store and lets tests inject a recorder. It is intentionally
+// NOT on engine.Store — trust state is a local-store concern.
+type SeenMarker interface {
+	MarkSeen(names ...string) error
+}
+
 // DriveOptions parameterizes a `ant fix` run.
 type DriveOptions struct {
 	Scope     engine.Scope
@@ -77,6 +87,14 @@ type DriveOptions struct {
 	// `ant review` — the default, nothing-applied behavior.
 	Apply      Applier
 	ApplyFused bool
+
+	// SeenSpecies are the species names that participated in this run; after the
+	// run completes the driver records them as "seen on a previous run" via
+	// SeenMarker so the freshly-installed trust override (TECHSPEC §6.3) tracks
+	// install state across runs. Empty/nil SeenMarker disables the recording (a
+	// run with no trust persistence, e.g. unit tests with a bare engine.Store).
+	SeenSpecies []string
+	SeenMarker  SeenMarker
 
 	// Rendering selection. Workers is the lane count for the TUI; Ascii/Color
 	// toggle the glyph/ANSI fallbacks.
@@ -188,6 +206,17 @@ func scheduleAndApply(ctx context.Context, bus *events.Bus, runID string, opts D
 			runErr = applyErr
 		}
 		applied = n
+	}
+
+	// Record the species that participated in this run as "seen on a previous
+	// run" so the NEXT run's freshly-installed override (TECHSPEC §6.3) tracks
+	// install state correctly. This runs whenever the colony scheduled (runErr
+	// nil), independent of --apply: a species is "seen" by having been present in
+	// a completed run, not by landing a diff. A marking failure is non-fatal — it
+	// only means the override stays conservative (the species is re-treated as
+	// fresh next run), which is the safe direction; it never blocks the run.
+	if runErr == nil && opts.SeenMarker != nil && len(opts.SeenSpecies) > 0 {
+		_ = opts.SeenMarker.MarkSeen(opts.SeenSpecies...)
 	}
 
 	runEnd := &events.RunEndPayload{

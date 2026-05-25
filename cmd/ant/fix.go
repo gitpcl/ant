@@ -58,6 +58,17 @@ func runFix(cmd *cobra.Command, args []string) error {
 		return err // a malformed species manifest → operational (exit 2)
 	}
 
+	// Trust authority: fold the freshly-installed propose-only override
+	// (TECHSPEC §6.3) on top of Sprint-004's ant.toml-or-manifest auto_apply,
+	// reading persisted install/review state from the Store. The resulting
+	// decisions carry the FINAL effective auto-apply the colony --apply path
+	// gates on, so a freshly-installed species cannot auto-land on its first run.
+	st := store.New(path)
+	decisions, err := species.ResolveTrust(resolved, st)
+	if err != nil {
+		return err // operational (exit 2): cannot read trust state
+	}
+
 	rc := colony.RecipeConfig{
 		Limits:           verify.DefaultLimits(),
 		RawModelModel:    modelFlagOrConfig(cmd, cfg),
@@ -74,9 +85,17 @@ func runFix(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanupRules()
 
-	recipes, detectors, err := colony.BuildRecipes(resolved, antFilter, rulesRoot, rc)
+	recipes, detectors, err := colony.BuildRecipes(decisions, antFilter, rulesRoot, rc)
 	if err != nil {
 		return err
+	}
+
+	// Species that will participate in this run — recorded as "seen on a previous
+	// run" after it completes, so the freshly-installed override tracks install
+	// state across runs. This is exactly the recipe set (enabled + --ant-filtered).
+	seen := make([]string, 0, len(recipes))
+	for name := range recipes {
+		seen = append(seen, name)
 	}
 
 	renderer := colony.RendererTUI
@@ -88,12 +107,14 @@ func runFix(cmd *cobra.Command, args []string) error {
 		Scope:       engine.Scope{Root: path, Species: antFilter},
 		Detectors:   detectors,
 		Recipes:     recipes,
-		Store:       store.New(path),
+		Store:       st,
 		Concurrency: concurrencyFlagOrDefault(cmd),
 		Renderer:    renderer,
 		Workers:     concurrencyFlagOrDefault(cmd),
 		Ascii:       asciiEnabled(cmd),
 		Color:       colorEnabled(),
+		SeenSpecies: seen,
+		SeenMarker:  st,
 	}
 
 	if boolFlag(cmd, "apply") {
