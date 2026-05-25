@@ -62,18 +62,23 @@ asset_ext() {
 	esac
 }
 
-# asset_name builds the archive filename for (version, os, arch), matching the
-# goreleaser name_template: ant_<version>_<os>_<arch>.<ext>.
-# Args: version os arch
+# asset_name builds the archive filename for (os, arch), matching the goreleaser
+# name_template: ant_<os>_<arch>.<ext>. The version is deliberately NOT part of
+# the filename — that is what lets GitHub's /latest/download/<name> redirect
+# resolve to a stable name so install.sh can fetch the newest release without
+# the caller pinning ANT_VERSION. MUST match .goreleaser.yaml archives
+# name_template. The released binary still self-describes via `ant --version`.
+# Args: os arch
 asset_name() {
-	_v="$1"; _os="$2"; _arch="$3"
-	printf '%s_%s_%s_%s.%s' "$PROJECT_NAME" "$_v" "$_os" "$_arch" "$(asset_ext "$_os")"
+	_os="$1"; _arch="$2"
+	printf '%s_%s_%s.%s' "$PROJECT_NAME" "$_os" "$_arch" "$(asset_ext "$_os")"
 }
 
-# checksums_name builds the checksums filename, matching goreleaser's
-# checksum.name_template: ant_<version>_checksums.txt.
+# checksums_name returns the checksums filename, matching goreleaser's
+# checksum.name_template: ant_checksums.txt. Version-free for the same reason as
+# asset_name() — /latest/download/ant_checksums.txt must resolve unversioned.
 checksums_name() {
-	printf '%s_%s_checksums.txt' "$PROJECT_NAME" "$1"
+	printf '%s_checksums.txt' "$PROJECT_NAME"
 }
 
 # sha256_of prints the lowercase sha256 hex of a file, picking whichever tool is
@@ -134,14 +139,25 @@ fetch() {
 	fi
 }
 
+# release_tag normalizes a pinned ANT_VERSION into the GitHub release tag form.
+# Release tags are semver with a leading 'v' (e.g. v0.1.0), so accept both
+# `0.1.0` and `v0.1.0` from the caller and always emit the v-prefixed tag.
+release_tag() {
+	case "$1" in
+		v*) printf '%s' "$1" ;;
+		*)  printf 'v%s' "$1" ;;
+	esac
+}
+
 # release_url builds the download URL for an asset name under the configured
-# base URL, handling the GitHub "latest" vs tagged path shapes.
+# base URL, handling the GitHub "latest" vs tagged path shapes. Asset names are
+# version-free, so the same name is used for both shapes.
 release_url() {
 	_name="$1"
 	if [ "$ANT_VERSION" = "latest" ]; then
 		printf '%s/latest/download/%s' "$ANT_BASE_URL" "$_name"
 	else
-		printf '%s/download/%s/%s' "$ANT_BASE_URL" "$ANT_VERSION" "$_name"
+		printf '%s/download/%s/%s' "$ANT_BASE_URL" "$(release_tag "$ANT_VERSION")" "$_name"
 	fi
 }
 
@@ -168,16 +184,19 @@ main_install() {
 	arch="$(detect_arch "$(uname -m)")" || die "unsupported architecture: $(uname -m)"
 	log "detected platform: ${os}/${arch}"
 
-	# Resolve the concrete version string for filenames. For a tagged install we
-	# strip a leading 'v'; for 'latest' we cannot know the version number from
-	# the static URL, so the checksums/asset names must be discovered. goreleaser
-	# embeds the version in filenames, so 'latest' callers should pass
-	# ANT_VERSION explicitly; we surface that requirement clearly.
-	[ "$ANT_VERSION" = "latest" ] && die "set ANT_VERSION=<x.y.z> (the version is part of the asset filename)"
-	ver="${ANT_VERSION#v}"
+	# Asset names are version-free (ant_<os>_<arch>.<ext>), so the SAME filenames
+	# work for both "latest" and a pinned ANT_VERSION=x.y.z. release_url() picks
+	# the GitHub path shape: /latest/download/<name> when ANT_VERSION=latest
+	# (the default), or /download/<tag>/<name> for a pinned version. There is no
+	# longer any need to know the version number to build a filename.
+	if [ "$ANT_VERSION" = "latest" ]; then
+		log "resolving latest release"
+	else
+		log "installing pinned version: $ANT_VERSION"
+	fi
 
-	asset="$(asset_name "$ver" "$os" "$arch")"
-	sums="$(checksums_name "$ver")"
+	asset="$(asset_name "$os" "$arch")"
+	sums="$(checksums_name)"
 
 	tmp="$(mktemp -d "${TMPDIR:-/tmp}/ant-install.XXXXXX")"
 	trap 'rm -rf "$tmp"' EXIT INT TERM
@@ -234,13 +253,41 @@ self_test() {
 	if detect_os Plan9 2>/dev/null; then check "reached" "unreachable" "detect_os rejects unknown"; else check "rejected" "rejected" "detect_os rejects unknown OS"; fi
 	if detect_arch mips 2>/dev/null;  then check "reached" "unreachable" "detect_arch rejects unknown"; else check "rejected" "rejected" "detect_arch rejects unknown arch"; fi
 
-	# Asset/checksum filename templates (must match .goreleaser.yaml).
-	check "$(asset_name 1.2.3 linux arm64)"   "ant_1.2.3_linux_arm64.tar.gz" "asset_name linux/arm64"
-	check "$(asset_name 1.2.3 windows amd64)" "ant_1.2.3_windows_amd64.zip"  "asset_name windows/amd64 -> zip"
-	check "$(checksums_name 1.2.3)"           "ant_1.2.3_checksums.txt"      "checksums_name template"
+	# Asset/checksum filename templates (must match .goreleaser.yaml). Names are
+	# VERSION-FREE so the same name resolves for both 'latest' and a pinned tag.
+	check "$(asset_name linux arm64)"   "ant_linux_arm64.tar.gz"   "asset_name linux/arm64"
+	check "$(asset_name windows amd64)" "ant_windows_amd64.zip"    "asset_name windows/amd64 -> zip"
+	check "$(checksums_name)"           "ant_checksums.txt"        "checksums_name template"
+
+	# URL resolution: 'latest' (the default, unpinned) uses /latest/download/<name>
+	# with the version-free asset name; a pinned ANT_VERSION uses the v-tagged
+	# /download/<tag>/<name> path with the SAME asset name. release_tag normalizes
+	# a bare semver into the v-prefixed GitHub tag. ANT_VERSION is set in the
+	# current shell (no subshell) so a FAIL still increments the parent's count.
+	_saved_ver="$ANT_VERSION"
+	_saved_base="$ANT_BASE_URL"
+	ANT_BASE_URL="https://github.com/gitpcl/ant/releases"
+
+	ANT_VERSION="latest"
+	check "$(release_url "$(asset_name linux arm64)")" \
+	      "https://github.com/gitpcl/ant/releases/latest/download/ant_linux_arm64.tar.gz" \
+	      "release_url latest (unpinned) -> /latest/download/<version-free name>"
+
+	ANT_VERSION="0.1.0"
+	check "$(release_url "$(asset_name linux arm64)")" \
+	      "https://github.com/gitpcl/ant/releases/download/v0.1.0/ant_linux_arm64.tar.gz" \
+	      "release_url pinned 0.1.0 -> /download/v0.1.0/<same name>"
+
+	ANT_VERSION="v0.1.0"
+	check "$(release_url "$(asset_name linux arm64)")" \
+	      "https://github.com/gitpcl/ant/releases/download/v0.1.0/ant_linux_arm64.tar.gz" \
+	      "release_url pinned v0.1.0 (already v-prefixed) -> /download/v0.1.0/<same name>"
+
+	ANT_VERSION="$_saved_ver"
+	ANT_BASE_URL="$_saved_base"
 
 	# Build a fake asset + a valid checksums file over it.
-	asset="ant_1.2.3_linux_arm64.tar.gz"
+	asset="ant_linux_arm64.tar.gz"
 	printf 'fake-ant-binary-archive\n' > "$t/$asset"
 	good="$(sha256_of "$t/$asset")"
 	printf '%s  %s\n' "$good" "$asset" > "$t/sums-good.txt"
@@ -299,7 +346,16 @@ self_test() {
 case "${1:-}" in
 	--self-test) self_test ;;
 	--help|-h)
-		printf 'Usage: ANT_VERSION=x.y.z sh install.sh\n'
+		printf 'Usage: sh install.sh                 # installs the LATEST release (default)\n'
+		printf '       curl -fsSL https://raw.githubusercontent.com/gitpcl/ant/main/install.sh | sh\n'
+		printf '\n'
+		printf 'Environment (all optional):\n'
+		printf '  ANT_VERSION       release to install; defaults to "latest". Pin with\n'
+		printf '                    ANT_VERSION=v0.1.0 (or 0.1.0) to install a specific tag.\n'
+		printf '  ANT_INSTALL_DIR   bin dir to install into (default: a writable PATH dir,\n'
+		printf '                    else $HOME/.local/bin).\n'
+		printf '  ANT_REPO          owner/repo to pull releases from (default: gitpcl/ant).\n'
+		printf '\n'
 		printf '       sh install.sh --self-test   # offline integrity self-check\n'
 		;;
 	*) main_install ;;

@@ -108,6 +108,24 @@ Prebuilt targets: linux `amd64`/`arm64`, darwin `amd64`/`arm64`, windows `amd64`
 
 ---
 
+## Updating
+
+Each method resolves the newest release on its own — **no version pinning required.**
+
+```bash
+# go install — rebuilds the latest tagged version
+go install github.com/gitpcl/ant/cmd/ant@latest
+
+# curl | sh — installs the newest release (re-run to upgrade in place)
+curl -fsSL https://raw.githubusercontent.com/gitpcl/ant/main/install.sh | sh
+```
+
+- `curl … | sh` is **latest-capable**: with no `ANT_VERSION` set it fetches the most recent release via GitHub's `/releases/latest/download/` redirect. Pinning is still supported but optional — `ANT_VERSION=v0.1.0` (or `0.1.0`) installs a specific tag.
+- Confirm what you're running with `ant --version`.
+- **Homebrew:** not yet available. If/when a tap is published, `brew install --cask ant` (after `brew tap gitpcl/tap`) and `brew upgrade ant` will be the recommended path; until then use one of the methods above. No homebrew block ships in `.goreleaser.yaml` yet because the tap repo + cross-repo token are not provisioned — a turn-key activation recipe (the exact `homebrew_casks:` block, tap repo, and `HOMEBREW_TAP_TOKEN` steps) is recorded in `.harness/progress_log.md`.
+
+---
+
 ## How it works
 
 ```
@@ -162,6 +180,35 @@ enabled = true             # opt into the disabled-by-default fuzzy species
 - **[Species authoring](docs/guide/species-authoring.md)** — write and publish your own species
 - **Design decisions** — [ADRs](docs/decisions/): command model · launch species · license & trails · detector strategy & confidence tiers
 - **[PRD](docs/PRD.md)** · **[Technical spec](docs/TECHSPEC.md)**
+
+---
+
+## Releasing
+
+> Maintainer-facing. Shipping a release **is** pushing a semver tag.
+
+```bash
+# Cut a release: tag with semver and push the tag.
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Pushing a `v*` tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which runs goreleaser to cross-compile every target, build the archives + a `ant_checksums.txt` file, and **publish a GitHub Release automatically** (`release.draft: false`). Auto-publish is intentional: `curl … install.sh | sh` resolves "latest" through GitHub's `/releases/latest` endpoints, which only see published (non-draft, non-prerelease) releases — so the tag push is the deliberate ship action.
+
+**Only `v*` tags trigger a release.** `sprint-NNN-complete` tags are **harness checkpoints, not releases** — they do not match the workflow's `v*` filter and publish nothing. Releases always use semver `vX.Y.Z`.
+
+Manual fallback (publishes from your machine; requires a token with `contents: write`):
+
+```bash
+GITHUB_TOKEN=… goreleaser release --clean
+```
+
+Before tagging, you can validate the config and dry-run the full release locally without publishing:
+
+```bash
+goreleaser check                          # validate .goreleaser.yaml
+goreleaser release --snapshot --clean     # build all archives + checksums under dist/, publishes nothing
+```
 
 ---
 

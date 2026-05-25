@@ -31,8 +31,13 @@ builds:
     # Trim paths for reproducible, smaller binaries; strip symbol/DWARF tables.
     flags:
       - -trimpath
+    # Strip symbol/DWARF tables (-s -w) AND inject the release version into the
+    # engine's `var Version` via the linker. {{.Version}} is the git tag for a
+    # real release, or the snapshot template (see `snapshot:` below) for
+    # --snapshot builds. From source (`go run`) Version stays "dev".
     ldflags:
       - -s -w
+      - -X github.com/gitpcl/ant/internal/engine.Version={{.Version}}
     # Target matrix: linux + darwin + windows on amd64, plus linux/arm64 and
     # darwin/arm64. linux/arm64 is REQUIRED for Pi/Jetson (TECHSPEC §2).
     goos:
@@ -59,14 +64,25 @@ archives:
       - goos: windows
         formats:
           - zip
+    # VERSION-FREE asset names (ant_<os>_<arch>.<ext>). Dropping {{ .Version }}
+    # is what lets GitHub's /releases/latest/download/<name> redirect resolve to
+    # a stable, predictable filename, so `curl … install.sh | sh` can fetch the
+    # newest release with NO ANT_VERSION pinned (see install.sh asset_name() and
+    # the latest branch in release_url()). The released binary is still
+    # self-describing at runtime via `ant --version` (ldflags -X injection
+    # above), so the version is not lost — only its presence in the filename is.
+    # MUST stay in sync with install.sh asset_name().
     name_template: >-
-      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+      {{ .ProjectName }}_{{ .Os }}_{{ .Arch }}
 
 checksum:
   # A single checksums file over every archive. install.sh downloads this file
   # and verifies the archive it pulled against the matching line; a mismatch
   # MUST abort the install (see install.sh verify_checksum()).
-  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+  # VERSION-FREE name (ant_checksums.txt) for the same reason as the archive
+  # name_template above: /latest/download/ant_checksums.txt must resolve without
+  # knowing the version. MUST stay in sync with install.sh checksums_name().
+  name_template: "{{ .ProjectName }}_checksums.txt"
   algorithm: sha256
 
 snapshot:
@@ -80,4 +96,12 @@ release:
   github:
     owner: gitpcl
     name: ant
-  draft: true
+  # draft:false => a pushed `v*` tag publishes immediately (no manual UI step).
+  # This is REQUIRED by the next feature: install.sh resolves "latest" via
+  # GitHub's /releases/latest (and /latest/download/), which return only the
+  # most recent NON-draft, non-prerelease release. A draft release is invisible
+  # to those endpoints, so "latest" would never resolve until a maintainer
+  # manually published. Tradeoff: we lose the pre-publish review gate, but the
+  # tag push is itself the deliberate ship action, and goreleaser's checksums
+  # file (verified by install.sh) preserves integrity.
+  draft: false
