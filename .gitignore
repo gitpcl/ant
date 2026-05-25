@@ -14,7 +14,12 @@ adapters/*/dist/
 # Go build/test artifacts
 *.test
 *.out
-coverage.*
+# Coverage reports only — NOT source. `coverage.*` previously also matched the
+# real source file internal/engine/verify/testselect/coverage.go, silently
+# keeping it out of the repo and breaking clean-checkout/CI builds.
+coverage.html
+coverage.txt
+coverage.xml
 
 # OS / editor cruft
 .DS_Store
