@@ -1,0 +1,15 @@
+{
+  "name": "@ant/pi-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pi extension front-door for Ant — a thin shell that execs `ant <verb> --json` and renders the parsed event stream. Shares the --json parser with the Claude Code skill. Zero runtime dependencies.",
+  "scripts": {
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^5.7.2"
+  }
+}

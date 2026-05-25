@@ -1,0 +1,83 @@
+# goreleaser config for Ant — cross-compiled single static binaries (TECHSPEC §2).
+#
+# WHY CGO_ENABLED=0 (the run-anywhere story): the engine is deliberately
+# CGO-free. Sprint 001 chose a pure-Go JSON store (internal/engine/store)
+# specifically so the binary cross-compiles to linux/arm64 (Raspberry Pi,
+# Jetson), packs into a scratch Docker image, and runs with no libc dependency.
+# There is NO SQLite/cgo tradeoff to note here precisely because that choice was
+# made upstream — `CGO_ENABLED=0` static builds Just Work for every target.
+#
+# Local verification: `goreleaser build --snapshot --clean` produces one static
+# binary per target under dist/ (including dist/ant_linux_arm64*/ant). This file
+# describes BOTH the snapshot build and a future tagged release; nothing here
+# publishes anything on its own.
+version: 2
+
+project_name: ant
+
+before:
+  hooks:
+    # Keep the module graph honest before a release build. No code generation —
+    # built-in species are go:embed'd, so the source tree is the build input.
+    - go mod tidy
+
+builds:
+  - id: ant
+    main: ./cmd/ant
+    binary: ant
+    # CGO-free static binaries — the whole point of the pure-Go engine.
+    env:
+      - CGO_ENABLED=0
+    # Trim paths for reproducible, smaller binaries; strip symbol/DWARF tables.
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    # Target matrix: linux + darwin + windows on amd64, plus linux/arm64 and
+    # darwin/arm64. linux/arm64 is REQUIRED for Pi/Jetson (TECHSPEC §2).
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # Windows has no arm64 target in this matrix; drop that one combination.
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: ant
+    ids:
+      - ant
+    # tar.gz everywhere except Windows, which gets a .zip. The install.sh asset
+    # names are derived from this name_template (see install.sh asset_name()).
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  # A single checksums file over every archive. install.sh downloads this file
+  # and verifies the archive it pulled against the matching line; a mismatch
+  # MUST abort the install (see install.sh verify_checksum()).
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  # Snapshot (untagged) version string used by `--snapshot`. Real releases use
+  # the git tag.
+  version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"
+
+release:
+  # Releases are GitHub releases on the canonical repo; nothing is published by
+  # a snapshot build.
+  github:
+    owner: gitpcl
+    name: ant
+  draft: true

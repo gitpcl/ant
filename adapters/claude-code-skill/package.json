@@ -1,0 +1,15 @@
+{
+  "name": "@ant/claude-code-skill",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Claude Code skill front-door for Ant — a thin shell that execs `ant <verb> --json` and renders the parsed event stream. Zero runtime dependencies.",
+  "scripts": {
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^5.7.2"
+  }
+}

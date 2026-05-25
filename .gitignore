@@ -4,6 +4,13 @@
 # Built binary (root-anchored so it never matches cmd/ant/)
 /ant
 
+# goreleaser snapshot/release output
+/dist/
+
+# Node front-door dependencies + build output
+adapters/*/node_modules/
+adapters/*/dist/
+
 # Go build/test artifacts
 *.test
 *.out
