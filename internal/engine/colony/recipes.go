@@ -9,6 +9,7 @@ import (
 	"github.com/gitpcl/ant/internal/engine/fix"
 	"github.com/gitpcl/ant/internal/engine/species"
 	"github.com/gitpcl/ant/internal/engine/verify"
+	"github.com/gitpcl/ant/internal/engine/verify/testselect"
 )
 
 // RecipeConfig carries the resolved colony knobs a recipe needs that are not on
@@ -42,6 +43,12 @@ func BuildRecipes(resolved []species.Resolved, antFilter []string, rulesRoot str
 	recipes := make(map[string]SpeciesRecipe)
 	var detectors []engine.NamedDetector
 
+	// One coverage cache PER RUN, shared by every ant's tests:affected verifier so
+	// the (expensive) coverage profile is generated once and reused across ants,
+	// regenerated only when the test-file set changes (TECHSPEC §5.3.1). Built here
+	// in the composition root — the single place that runs once per `ant fix`.
+	coverCache := testselect.NewProfileCache(testselect.NewGoProfileGenerator())
+
 	for _, r := range resolved {
 		m := r.Manifest
 		if !r.EffectiveEnabled {
@@ -61,7 +68,7 @@ func BuildRecipes(resolved []species.Resolved, antFilter []string, rulesRoot str
 
 		recipes[m.Name] = SpeciesRecipe{
 			Fixer:       buildFixer(m, rc),
-			NewVerifier: verifierBuilder(m, det, rc.Limits),
+			NewVerifier: verifierBuilder(m, det, rc.Limits, coverCache),
 			AutoApply:   r.EffectiveAutoApply,
 		}
 	}
@@ -120,10 +127,12 @@ func buildFixer(m species.Manifest, rc RecipeConfig) engine.Fixer {
 }
 
 // verifierBuilder returns a per-finding verifier constructor: diff-bounded first
-// (TECHSPEC §8.1), then the manifest's declared checks (compile, detector-clears)
-// in order. detector-clears is bound to the specific finding, which is why the
-// gate is built per finding, not per species.
-func verifierBuilder(m species.Manifest, det engine.Detector, limits verify.Limits) func(engine.Finding) engine.Verifier {
+// (TECHSPEC §8.1), then the manifest's declared checks (compile, detector-clears,
+// tests:affected) in order. detector-clears is bound to the specific finding,
+// which is why the gate is built per finding, not per species. The shared
+// coverCache is passed to tests:affected so coverage is generated once per run and
+// reused across every ant (TECHSPEC §5.3.1).
+func verifierBuilder(m species.Manifest, det engine.Detector, limits verify.Limits, coverCache *testselect.ProfileCache) func(engine.Finding) engine.Verifier {
 	checks := m.Verify.Checks
 	return func(f engine.Finding) engine.Verifier {
 		var rest []engine.Verifier
@@ -133,12 +142,17 @@ func verifierBuilder(m species.Manifest, det engine.Detector, limits verify.Limi
 				rest = append(rest, verify.NewCompile(nil)) // nil → real `go build`
 			case "detector-clears":
 				rest = append(rest, verify.NewDetectorClears(det, f))
+			case verify.CheckTestsAffected:
+				// Smart test selection: coverage-map → import-graph → package
+				// fallback, sharing the colony-wide coverage cache; runs ONLY the
+				// affected tests and reports the strategy used (TECHSPEC §5.3.1).
+				rest = append(rest, verify.NewTestsAffected(verify.AffectedConfig{Cache: coverCache}))
 			case "diff-bounded":
 				// diff-bounded is always prepended by NewGate; skip an explicit one.
 			default:
-				// tests:affected / command:* land in later sprints; ignore unknown
-				// checks here rather than failing the whole run — the species still
-				// gets the gates it can run today (diff-bounded + compile).
+				// command:* lands in a later sprint; ignore an unknown check here
+				// rather than failing the whole run — the species still gets the
+				// gates it can run today.
 			}
 		}
 		return verify.NewGate(limits, rest...)

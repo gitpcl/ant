@@ -1,0 +1,9 @@
+package mid
+
+import "testing"
+
+func TestPlus(t *testing.T) {
+	if Plus() != 42 {
+		t.Fatalf("Plus()=%d", Plus())
+	}
+}

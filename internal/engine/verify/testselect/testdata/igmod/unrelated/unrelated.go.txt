@@ -1,0 +1,4 @@
+package unrelated
+
+// Standalone imports nothing in the module.
+func Standalone() string { return "nope" }

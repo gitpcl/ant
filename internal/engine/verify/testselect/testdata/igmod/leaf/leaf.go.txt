@@ -1,0 +1,4 @@
+package leaf
+
+// Value is the leaf function the mid package depends on.
+func Value() int { return 41 }

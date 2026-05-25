@@ -1,0 +1,9 @@
+package leaf
+
+import "testing"
+
+func TestValue(t *testing.T) {
+	if Value() != 41 {
+		t.Fatalf("Value()=%d", Value())
+	}
+}

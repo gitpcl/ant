@@ -1,0 +1,6 @@
+package mid
+
+import "example.com/igmod/leaf"
+
+// Plus depends transitively on leaf.Value.
+func Plus() int { return leaf.Value() + 1 }
