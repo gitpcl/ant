@@ -18,3 +18,7 @@ coverage.*
 
 # OS / editor cruft
 .DS_Store
+
+# Agent harness working state + project docs (kept local, not versioned)
+.harness/
+docs/
