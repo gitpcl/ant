@@ -1,0 +1,21 @@
+--- a/repo.go
++++ b/repo.go
+@@ -10,7 +10,13 @@
+-	if ok {
+-		if n > 0 {
+-			if name != "" {
+-				return "valid:" + name
+-			}
+-		}
+-	}
+-	return "invalid"
++	if !ok {
++		return "invalid"
++	}
++	if n <= 0 {
++		return "invalid"
++	}
++	if name == "" {
++		return "invalid"
++	}
++	return "valid:" + name

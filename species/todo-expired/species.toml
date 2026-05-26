@@ -1,0 +1,28 @@
+name        = "todo-expired"
+description = "Detects stale TODO/FIXME/HACK markers (dated TODOs, issue-referenced FIXMEs, HACK tags) and REPORTS them — report-only, no code change. Ships DISABLED by default (noisy in immature repos); enable per-project in ant.toml. See detect.yml."
+severity    = "low"
+languages   = ["go"]
+auto_apply  = false
+enabled     = false
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# REPORT-ONLY (Sprint 019, ENGINE-GAP #2). This species is intentionally
+# detect-only: `ant scout` reports its findings and changes NOTHING in the working
+# tree (scout's contract — TECHSPEC §2, proven by TestScoutNeverWritesWorkingTree).
+# It is NOT meant to be run through `ant fix`. The manifest schema requires a
+# [fix] and a non-empty [verify] for any species, so a minimal deterministic
+# (no-prompt) fix + the detector-clears check are declared to satisfy validation;
+# they are never exercised because the species ships enabled=false and is surfaced
+# only via scout. The fixture asserts the report-only contract directly (findings
+# produced, NO diff) rather than driving a fix — see species/fixture
+# RunDetectOnlyCase. A truly fix-less manifest (no [fix] block, report-only fix
+# kind) would require an engine change to the loader/schema, which is out of scope
+# for a species sprint (escalation path noted in .harness/progress_log.md).
+[fix]
+kind = "deterministic"
+
+[verify]
+checks = ["detector-clears"]

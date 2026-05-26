@@ -1,0 +1,55 @@
+# Detector rule for the long-function species (LLM-assisted, ADR-0002 / ADR-0004).
+# Sprint 019 — maintainability.
+#
+# Smell: an overly long function. Long functions do too much, are hard to test in
+# isolation, and hide their structure. The canonical refactor is to extract a
+# cohesive block into a well-named helper.
+#
+# THRESHOLD (configurable species default = 6 statements). The threshold is
+# expressed DIRECTLY in this rule as the LENGTH of the `follows` chain: the rule
+# nominates a function_declaration whose body contains a statement preceded by
+# five other statements (a 6th statement => body length >= 6). To raise the
+# threshold add another nested `follows`; to lower it remove one. ast-grep rules
+# are static YAML referenced by path, so the threshold lives here as the
+# documented species default rather than a runtime ant.toml knob (see
+# .harness/progress_log.md Sprint-019 ENGINE-GAP #1 — a manifest/ant.toml
+# threshold parameter consumed by an ast-grep rule would require an engine change,
+# out of scope for a species sprint).
+#
+# WHY a follows-chain and not nthChild/line-count: ast-grep 0.42.3 has no
+# line-count or cyclomatic-complexity construct, and tree-sitter-go nthChild over
+# a block did not match in this version (the block's brace tokens are children).
+# A chain of pattern-based `follows` with `stopBy: end` reliably counts sequential
+# statements (validated against the fixture). It is a statement-count proxy for
+# "long" — a CANDIDATE-tier nomination, exactly the trust tier ADR-0004 expects;
+# the verify gate (compile + tests:affected + detector-clears) confirms the
+# specific finding by requiring the proposed extraction to drop the function below
+# threshold (so this rule then matches zero times).
+#
+# severity is `warning` so `ast-grep scan` exits 0 on a match. auto_apply is
+# false: where to cut a function is a judgement call, so the verified extraction
+# is always staged for review.
+id: long-function
+language: go
+severity: warning
+message: 'Function body exceeds the configured statement threshold (6) — extract a cohesive block into a well-named helper'
+rule:
+  kind: function_declaration
+  has:
+    stopBy: end
+    pattern: $LAST
+    follows:
+      stopBy: end
+      pattern: $S5
+      follows:
+        stopBy: end
+        pattern: $S4
+        follows:
+          stopBy: end
+          pattern: $S3
+          follows:
+            stopBy: end
+            pattern: $S2
+            follows:
+              stopBy: end
+              pattern: $S1

@@ -1,0 +1,64 @@
+--- a/repo.go
++++ b/repo.go
+@@ -10,8 +10,1 @@
+-	v := raw * 2
+-	if v < 0 {
+-		v = 0
+-	}
+-	if v > 100 {
+-		v = 100
+-	}
+-	return v
++	return clamp(raw * 2)
+@@ -21,8 +14,9 @@
+-	v := raw + 10
+-	if v < 0 {
+-		v = 0
+-	}
+-	if v > 100 {
+-		v = 100
+-	}
+-	return v
++	return clamp(raw + 10)
++}
++
++func clamp(v int) int {
++	if v < 0 {
++		v = 0
++	}
++	if v > 100 {
++		v = 100
++	}
++	return v
+--- a/repo.go
++++ b/repo.go
+@@ -10,8 +10,1 @@
+-	v := raw * 2
+-	if v < 0 {
+-		v = 0
+-	}
+-	if v > 100 {
+-		v = 100
+-	}
+-	return v
++	return clamp(raw * 2)
+@@ -21,8 +14,9 @@
+-	v := raw + 10
+-	if v < 0 {
+-		v = 0
+-	}
+-	if v > 100 {
+-		v = 100
+-	}
+-	return v
++	return clamp(raw + 10)
++}
++
++func clamp(v int) int {
++	if v < 0 {
++		v = 0
++	}
++	if v > 100 {
++		v = 100
++	}
++	return v

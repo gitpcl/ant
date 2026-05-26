@@ -1,0 +1,17 @@
+name        = "long-function"
+description = "Detects functions whose body exceeds the configured statement threshold (default 6) and proposes a mechanical helper extraction; see detect.yml. Propose-only (LLM-assisted; extraction shape is a judgement call)."
+severity    = "low"
+languages   = ["go"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+[verify]
+checks = ["compile", "tests:affected", "detector-clears"]

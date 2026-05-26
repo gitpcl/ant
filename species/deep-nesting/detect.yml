@@ -1,0 +1,47 @@
+# Detector rule for the deep-nesting species (LLM-assisted, ADR-0002 / ADR-0004).
+# SIGNATURE species (Sprint 019) — the verified-refactor showcase.
+#
+# Smell: conditional nesting reaching the configured DEPTH THRESHOLD. Deeply
+# nested `if` blocks push the success path to the far right of the screen, hide
+# the early-exit conditions, and make the function hard to read and to test. The
+# canonical refactor is to invert each guard and return early (guard clauses /
+# early returns), leaving the success path un-indented at the bottom.
+#
+# THRESHOLD (configurable species default = 3). The threshold is expressed
+# DIRECTLY in this rule as the depth of the nested `has` chain: the rule nominates
+# the OUTERMOST `if` that transitively contains an `if` two levels deeper (so the
+# matched region is `if`-inside-`if`-inside-`if` = depth 3). To make the species
+# stricter (depth 4) add one more nested `has`; to make it looser (depth 2) remove
+# one. ast-grep rules are static YAML referenced by path, so the threshold lives
+# here as the documented species default rather than as a runtime ant.toml knob
+# (see .harness/progress_log.md Sprint-019 ENGINE-GAP #1 — a manifest/ant.toml
+# threshold parameter consumed by an ast-grep rule would require an engine change,
+# which is out of scope for a species sprint).
+#
+# `not: inside: if` pins the match to the OUTERMOST qualifying `if` so a single
+# depth-3 nest reports exactly ONE finding (not one per level). `stopBy: end`
+# lets each `has`/`inside` reach through intervening blocks.
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: it nominates the
+# nesting shape; the verify gate confirms the specific finding — the LLM fix
+# flattens to guard clauses, then `compile` + `tests:affected` + `detector-clears`
+# prove the rewrite compiles, keeps the affected tests green, and that no depth-3
+# `if` nest remains (this rule then matches zero times). severity is `warning` so
+# `ast-grep scan` exits 0 on a match. auto_apply is false: flattening is a
+# judgement-bearing refactor, so the verified diff is always staged for review.
+id: deep-nesting
+language: go
+severity: warning
+message: 'Conditional nesting reaches depth 3 — flatten with guard clauses / early returns to keep the success path un-indented'
+rule:
+  pattern: if $C1 { $$$ }
+  has:
+    pattern: if $C2 { $$$ }
+    stopBy: end
+    has:
+      pattern: if $C3 { $$$ }
+      stopBy: end
+  not:
+    inside:
+      pattern: if $C0 { $$$ }
+      stopBy: end

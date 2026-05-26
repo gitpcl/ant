@@ -1,0 +1,32 @@
+--- a/repo.go
++++ b/repo.go
+@@ -13,5 +13,9 @@
+-	p := x * y
+-	q := y * z
+-	r := p + q
+-	return r
+-}
++	return products(x, y, z)
++}
++
++func products(x, y, z int) int {
++	p := x * y
++	q := y * z
++	return p + q
++}
+--- a/repo.go
++++ b/repo.go
+@@ -13,5 +13,9 @@
+-	p := x * y
+-	q := y * z
+-	r := p + q
+-	return r
+-}
++	return products(x, y, z)
++}
++
++func products(x, y, z int) int {
++	p := x * y
++	q := y * z
++	return p + q
++}

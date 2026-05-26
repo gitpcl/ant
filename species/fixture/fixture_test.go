@@ -168,6 +168,57 @@ func cases() []fixture.Case {
 			Fixer:      fixture.RecordedFixer(engine.FileDiff{Path: "repo.go", Patch: sqlStringConcatPatch}),
 		},
 		{
+			// long-function (Sprint 019): the detector nominates a function whose body
+			// exceeds the statement threshold (6); the recorded fix extracts a cohesive
+			// block into a `products` helper, leaving BOTH functions below the threshold
+			// and computing the identical result. After the fix no function exceeds the
+			// threshold, so detector-clears matches zero; compile + tests:affected
+			// confirm Process's result is unchanged.
+			Name:       "long-function",
+			SpeciesDir: filepath.Join(speciesRoot, "long-function"),
+			RepoDir:    filepath.Join("testdata", "long-function", "repo"),
+			GoldenPath: filepath.Join("testdata", "long-function", "fix.golden"),
+			Fixer:      fixture.RecordedFixer(engine.FileDiff{Path: "repo.go", Patch: longFunctionPatch}),
+		},
+		{
+			// magic-number (Sprint 019): the detector nominates repeated unexplained
+			// numeric literals (multi-digit, excluding trivial single digits); the
+			// recorded fix extracts a named constant and replaces the occurrences. After
+			// the fix the literal is gone (only the named constant's single definition
+			// remains), so detector-clears matches zero; compile + tests:affected confirm
+			// the value is unchanged.
+			Name:       "magic-number",
+			SpeciesDir: filepath.Join(speciesRoot, "magic-number"),
+			RepoDir:    filepath.Join("testdata", "magic-number", "repo"),
+			GoldenPath: filepath.Join("testdata", "magic-number", "fix.golden"),
+			Fixer:      fixture.RecordedFixer(engine.FileDiff{Path: "repo.go", Patch: magicNumberPatch}),
+		},
+		{
+			// duplicate-code-small (Sprint 019): the detector nominates a small repeated
+			// block that appears in two functions; the recorded fix extracts a shared
+			// helper and calls it from both sites. After the fix the duplicated block
+			// appears once (in the helper), so detector-clears matches zero; compile +
+			// tests:affected confirm both callers still compute the same result.
+			Name:       "duplicate-code-small",
+			SpeciesDir: filepath.Join(speciesRoot, "duplicate-code-small"),
+			RepoDir:    filepath.Join("testdata", "duplicate-code-small", "repo"),
+			GoldenPath: filepath.Join("testdata", "duplicate-code-small", "fix.golden"),
+			Fixer:      fixture.RecordedFixer(engine.FileDiff{Path: "repo.go", Patch: duplicateCodeSmallPatch}),
+		},
+		{
+			// deep-nesting is the Sprint 019 SIGNATURE species (the verified-refactor
+			// showcase): the detector nominates the OUTERMOST `if` of a depth-3 nest;
+			// the recorded fix flattens it to guard clauses / early returns, preserving
+			// the exact result on every path. After the fix no depth-3 nest remains, so
+			// detector-clears matches zero; compile + tests:affected confirm every path
+			// (success + each early-exit) keeps its original return value.
+			Name:       "deep-nesting",
+			SpeciesDir: filepath.Join(speciesRoot, "deep-nesting"),
+			RepoDir:    filepath.Join("testdata", "deep-nesting", "repo"),
+			GoldenPath: filepath.Join("testdata", "deep-nesting", "fix.golden"),
+			Fixer:      fixture.RecordedFixer(engine.FileDiff{Path: "repo.go", Patch: deepNestingPatch}),
+		},
+		{
 			Name:       "nil-deref",
 			SpeciesDir: filepath.Join(speciesRoot, "nil-deref"),
 			RepoDir:    filepath.Join("testdata", "nil-deref", "repo"),
@@ -343,6 +394,121 @@ const sqlStringConcatPatch = `--- a/repo.go
 +	r := s.db.QueryRow("SELECT name FROM users WHERE id = ?", id)
 `
 
+// longFunctionPatch (Sprint 019) extracts the product computation (p, q, r) out
+// of Process into a `products(x, y, z)` helper, replacing the tail with a single
+// call. Process drops from 7 statements to 4, and products is 3 statements — both
+// below the threshold of 6 — so detector-clears matches zero. The result is
+// identical (x*y + y*z), proven by repo_test.go. One hunk replaces old lines
+// 13-17 (p/q/r/return/closing-brace) with the call, the brace, and the helper.
+const longFunctionPatch = `--- a/repo.go
++++ b/repo.go
+@@ -13,5 +13,9 @@
+-	p := x * y
+-	q := y * z
+-	r := p + q
+-	return r
+-}
++	return products(x, y, z)
++}
++
++func products(x, y, z int) int {
++	p := x * y
++	q := y * z
++	return p + q
++}
+`
+
+// magicNumberPatch (Sprint 019) extracts the repeated literal 86400 (seconds per
+// day) into a named constant secondsPerDay and replaces both occurrences. After
+// the fix the multi-digit literal no longer appears in an expression (only the
+// const's single definition), so the magic-number detector — which excludes the
+// constant declaration site — matches zero. The computed value is unchanged,
+// proven by repo_test.go. Three hunks: insert the const, then rewrite each use.
+const magicNumberPatch = `--- a/repo.go
++++ b/repo.go
+@@ -1,1 +1,3 @@
+ package magicnum
++
++const secondsPerDay = 86400
+@@ -8,1 +10,1 @@
+-	return days * 86400
++	return days * secondsPerDay
+@@ -12,1 +14,1 @@
+-	return seconds / 86400
++	return seconds / secondsPerDay
+`
+
+// duplicateCodeSmallPatch (Sprint 019) extracts the small repeated normalize
+// block (clamp into [0,100]) that appeared verbatim in ScoreA and ScoreB into a
+// shared clamp helper, replacing both copies with a call. After the fix the
+// duplicated block appears once (in clamp), so the duplicate-code detector —
+// which requires the block in TWO functions — matches zero. Both callers compute
+// the same result, proven by repo_test.go. Hunks rewrite each function body and
+// append the helper.
+const duplicateCodeSmallPatch = `--- a/repo.go
++++ b/repo.go
+@@ -10,8 +10,1 @@
+-	v := raw * 2
+-	if v < 0 {
+-		v = 0
+-	}
+-	if v > 100 {
+-		v = 100
+-	}
+-	return v
++	return clamp(raw * 2)
+@@ -21,8 +14,9 @@
+-	v := raw + 10
+-	if v < 0 {
+-		v = 0
+-	}
+-	if v > 100 {
+-		v = 100
+-	}
+-	return v
++	return clamp(raw + 10)
++}
++
++func clamp(v int) int {
++	if v < 0 {
++		v = 0
++	}
++	if v > 100 {
++		v = 100
++	}
++	return v
+`
+
+// deepNestingPatch (Sprint 019 signature) flattens Classify's depth-3 `if` nest
+// into guard clauses: each outer condition is inverted and returns the
+// fall-through value ("invalid") early, leaving the success path un-indented at
+// the bottom. Behavior is identical on every input (the success path and each
+// early-exit), proven by repo_test.go. One hunk replaces the nested body
+// (old lines 10-17) with the flattened form; after the fix there is no depth-3
+// nest, so detector-clears matches zero.
+const deepNestingPatch = `--- a/repo.go
++++ b/repo.go
+@@ -10,7 +10,13 @@
+-	if ok {
+-		if n > 0 {
+-			if name != "" {
+-				return "valid:" + name
+-			}
+-		}
+-	}
+-	return "invalid"
++	if !ok {
++		return "invalid"
++	}
++	if n <= 0 {
++		return "invalid"
++	}
++	if name == "" {
++		return "invalid"
++	}
++	return "valid:" + name
+`
+
 // nilDerefPatch binds and checks the discarded error, returning (int, error) so
 // the nil dereference is guarded.
 const nilDerefPatch = `--- a/repo.go
@@ -422,6 +588,23 @@ const aiSlopPatch = "--- a/repo.go\n" +
 	"-\tresult := a + b\n" +
 	"-\treturn result\n" +
 	"+\treturn a + b\n"
+
+// TestTodoExpiredReportOnly drives the Sprint 019 report-only species through the
+// detect-only harness: it asserts the species produces findings (the three seeded
+// stale markers — a dated TODO, an issue-referenced FIXME, and a HACK) but
+// produces NO diff and leaves the working tree byte-unchanged. This is the
+// report-only acceptance criterion ("produces findings but no diff"). The species
+// also ships DISABLED by default — that is asserted separately by
+// TestTodoExpiredShipsDisabled (against the real embedded manifest). The bare
+// `TODO:` note in the fixture is intentionally NOT counted, proving the rule only
+// flags the staleness-signalling markers.
+func TestTodoExpiredReportOnly(t *testing.T) {
+	fixture.RunDetectOnlyCase(t, fixture.Case{
+		Name:       "todo-expired",
+		SpeciesDir: filepath.Join(speciesRoot, "todo-expired"),
+		RepoDir:    filepath.Join("testdata", "todo-expired", "repo"),
+	}, 3)
+}
 
 // TestBuiltinSpeciesFixtures runs the detect→fix→verify→golden harness over each
 // built-in deterministic species with the REAL ast-grep detector, the REAL

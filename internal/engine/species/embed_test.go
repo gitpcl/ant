@@ -39,6 +39,17 @@ var adr0002 = map[string]struct {
 	"missing-context-timeout":  {FixKindLLM, false, true},
 	"unsafe-concurrency":       {FixKindLLM, false, true},
 	"sql-string-concat":        {FixKindLLM, false, true},
+	"deep-nesting":             {FixKindLLM, false, true},
+	"long-function":            {FixKindLLM, false, true},
+	"magic-number":             {FixKindLLM, false, true},
+	"duplicate-code-small":     {FixKindLLM, false, true},
+	// todo-expired is REPORT-ONLY and ships DISABLED by default (Sprint 019). Its
+	// [fix] is a minimal deterministic no-prompt stub purely to satisfy the
+	// manifest schema (every species needs a [fix]+[verify]); it is never invoked
+	// because the species is surfaced only via scout and resolves disabled. Hence
+	// the row is {FixKindDeterministic, auto_apply=false, enabled=false} — the
+	// disabled, propose-only, report-only posture.
+	"todo-expired": {FixKindDeterministic, false, false},
 }
 
 // TestEmbed_BuiltinsDiscoverableNoDisk is the core feature-3 assertion: the
@@ -89,26 +100,32 @@ func TestEmbed_BuiltinsDiscoverableNoDisk(t *testing.T) {
 // opt-in) the embedded ai-slop resolves DISABLED, so the colony's recipe builder
 // excludes it (it cannot run); and an explicit ant.toml [species.ai-slop]
 // enabled=true flips EffectiveEnabled on, the only path that activates it
-// (ADR-0002 — the fuzzy classifier ships off, opt-in only). The other five
-// built-ins stay enabled by default throughout, so enabling/disabling ai-slop
-// is strictly per-species (no global switch).
+// (ADR-0002 — the fuzzy classifier ships off, opt-in only). Every species that
+// ships ENABLED in the adr0002 table stays enabled throughout, so enabling
+// ai-slop is strictly per-species (no global switch). Sprint 019 added a second
+// disabled-by-default species (todo-expired, report-only), so the expected
+// enabled state is read from the adr0002 table rather than hard-coding ai-slop as
+// the sole disabled species.
 func TestAISlopShipsDisabled(t *testing.T) {
 	r := NewResolver("", NewRegistry())
 
-	// 1. Default run: ai-slop is disabled, every other built-in is enabled.
+	// 1. Default run: each species' EffectiveEnabled matches its adr0002 row
+	// (ai-slop and todo-expired ship disabled; every other built-in is enabled).
 	def, err := r.Resolve(config.Config{})
 	if err != nil {
 		t.Fatalf("Resolve default: %v", err)
 	}
 	for _, rv := range def {
-		want := rv.Manifest.Name != "ai-slop" // all but ai-slop ship enabled
+		want := adr0002[rv.Manifest.Name].enabled
 		if rv.EffectiveEnabled != want {
-			t.Errorf("default run: %s EffectiveEnabled = %v, want %v", rv.Manifest.Name, rv.EffectiveEnabled, want)
+			t.Errorf("default run: %s EffectiveEnabled = %v, want %v (per adr0002)", rv.Manifest.Name, rv.EffectiveEnabled, want)
 		}
 	}
 
-	// 2. Opt-in: ant.toml [species.ai-slop] enabled = true activates it, and only
-	// it — the other species are untouched by the override.
+	// 2. Opt-in: ant.toml [species.ai-slop] enabled = true activates ai-slop, and
+	// ONLY it — the other species keep their default enabled state (in particular
+	// the other disabled-by-default species, todo-expired, stays disabled, proving
+	// the override is strictly per-species).
 	on := true
 	enabled, err := r.Resolve(config.Config{Species: map[string]config.Species{
 		"ai-slop": {Enabled: &on},
@@ -117,8 +134,51 @@ func TestAISlopShipsDisabled(t *testing.T) {
 		t.Fatalf("Resolve with ai-slop enabled: %v", err)
 	}
 	for _, rv := range enabled {
-		if !rv.EffectiveEnabled {
-			t.Errorf("with ai-slop opt-in: %s EffectiveEnabled = false, want true (every species, incl. opted-in ai-slop, is now enabled)", rv.Manifest.Name)
+		want := rv.Manifest.Name == "ai-slop" || adr0002[rv.Manifest.Name].enabled
+		if rv.EffectiveEnabled != want {
+			t.Errorf("with ai-slop opt-in: %s EffectiveEnabled = %v, want %v (only ai-slop flips on; other defaults unchanged)", rv.Manifest.Name, rv.EffectiveEnabled, want)
+		}
+	}
+}
+
+// TestTodoExpiredShipsDisabled is the Sprint 019 report-only species' disabled-by-
+// default assertion against the REAL embedded manifest: on a default run
+// todo-expired resolves DISABLED (so the colony excludes it — it never runs or
+// writes), and an explicit ant.toml [species.todo-expired] enabled=true is the
+// only path that activates it, mirroring ai-slop's opt-in. Enabling it leaves the
+// other species' enabled state untouched (per-species, no global switch).
+func TestTodoExpiredShipsDisabled(t *testing.T) {
+	r := NewResolver("", NewRegistry())
+
+	def, err := r.Resolve(config.Config{})
+	if err != nil {
+		t.Fatalf("Resolve default: %v", err)
+	}
+	var found bool
+	for _, rv := range def {
+		if rv.Manifest.Name != "todo-expired" {
+			continue
+		}
+		found = true
+		if rv.EffectiveEnabled {
+			t.Errorf("default run: todo-expired EffectiveEnabled = true, want false (report-only, ships disabled)")
+		}
+	}
+	if !found {
+		t.Fatalf("todo-expired missing from the embedded tree")
+	}
+
+	on := true
+	enabled, err := r.Resolve(config.Config{Species: map[string]config.Species{
+		"todo-expired": {Enabled: &on},
+	}})
+	if err != nil {
+		t.Fatalf("Resolve with todo-expired enabled: %v", err)
+	}
+	for _, rv := range enabled {
+		want := rv.Manifest.Name == "todo-expired" || adr0002[rv.Manifest.Name].enabled
+		if rv.EffectiveEnabled != want {
+			t.Errorf("with todo-expired opt-in: %s EffectiveEnabled = %v, want %v (only todo-expired flips on)", rv.Manifest.Name, rv.EffectiveEnabled, want)
 		}
 	}
 }

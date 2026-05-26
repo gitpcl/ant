@@ -1,0 +1,42 @@
+# Detector rule for the magic-number species (LLM-assisted, ADR-0002 / ADR-0004).
+# Sprint 019 — maintainability.
+#
+# Smell: an unexplained numeric literal embedded in an expression (a "magic
+# number"). The reader has to guess what the value means; a named constant makes
+# the intent explicit and gives a single place to change it.
+#
+# IGNORE-LIST / THRESHOLD (configurable species default). Two filters are
+# expressed DIRECTLY in this rule as the documented species default:
+#   1. `regex: '[0-9]{2,}'` — only MULTI-DIGIT literals are nominated, so the
+#      trivial values 0..9 (loop bounds, ±1 offsets, small indices) are excluded.
+#      This is the "ignore trivial values" default the contract calls for
+#      (0/1/...); widen or narrow the regex to change the ignore-list.
+#   2. `not: inside: const_spec` — a literal that is ALREADY the value of a named
+#      constant is not a magic number (it is the explanation). Excluding it is
+#      also what lets detector-clears pass: after the fix the only remaining
+#      occurrence of the literal is the new const definition, which this rule
+#      ignores, so the rule then matches zero times.
+# ast-grep rules are static YAML referenced by path, so the ignore-list lives
+# here as the species default rather than a runtime ant.toml knob (see
+# .harness/progress_log.md Sprint-019 ENGINE-GAP #1 — a manifest/ant.toml ignore
+# parameter consumed by an ast-grep rule would require an engine change, out of
+# scope for a species sprint).
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: it nominates the
+# literal; the verify gate confirms the finding — the LLM fix extracts a named
+# constant and replaces the occurrences, then compile + tests:affected +
+# detector-clears prove the value is unchanged and no bare multi-digit literal
+# remains. severity is `warning` so `ast-grep scan` exits 0 on a match. auto_apply
+# is false: the right NAME for a constant is a judgement call, so the verified
+# extraction is always staged for review.
+id: magic-number
+language: go
+severity: warning
+message: 'Unexplained numeric literal — extract a named constant so the value has a meaning and a single source of truth'
+rule:
+  kind: int_literal
+  regex: '[0-9]{2,}'
+  not:
+    inside:
+      kind: const_spec
+      stopBy: end

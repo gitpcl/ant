@@ -208,6 +208,85 @@ func RunCase(t *testing.T, c Case) {
 	assertGolden(t, c.Name, goldenPath, got)
 }
 
+// RunDetectOnlyCase exercises a REPORT-ONLY species (Sprint 019: todo-expired):
+// it runs the production detector over the fixture repo and asserts the
+// report-only contract directly —
+//
+//  1. the detector produces findings (the species genuinely flags the smell), and
+//  2. NO fix is produced and the working tree is BYTE-UNCHANGED before and after
+//     (report-only means findings but no diff — the acceptance criterion).
+//
+// It deliberately does NOT build or run a Fixer: a report-only species proposes
+// no change, so there is no diff and no golden. This is the harness counterpart
+// to `ant scout`, which never writes the working tree (TECHSPEC §2). Like
+// RunCase, it skips when ast-grep is absent (detection is a plugin boundary).
+//
+// expectMatches is the exact number of findings the fixture is authored to
+// produce (so a rule that silently over- or under-matches fails here, not
+// silently). It loads the real species.toml + detect.yml through the production
+// loader/registry, exactly as RunCase does.
+func RunDetectOnlyCase(t *testing.T, c Case, expectMatches int) {
+	t.Helper()
+
+	if !astGrepAvailable() {
+		t.Skipf("ast-grep not installed: skipping live %s detect-only fixture (detection is a plugin boundary, TECHSPEC §2)", c.Name)
+	}
+
+	speciesDir := mustAbs(t, c.SpeciesDir)
+	repoDir := mustAbs(t, c.RepoDir)
+	t.Chdir(repoDir)
+
+	reg := species.NewRegistry()
+	manifest := loadManifest(t, speciesDir, reg)
+	detector := buildDetector(t, reg, manifest, speciesDir)
+	scope := engine.Scope{Root: "."}
+
+	// Snapshot the working tree BEFORE detection so we can prove report-only
+	// changes nothing (the report-only / no-diff contract).
+	before := snapshotTree(t, ".")
+
+	findings, err := detector.Detect(context.Background(), scope)
+	if err != nil {
+		t.Fatalf("%s: detect over %s failed: %v", c.Name, c.RepoDir, err)
+	}
+	if len(findings) != expectMatches {
+		t.Fatalf("%s: detector produced %d findings, want %d (the report-only fixture must flag exactly the seeded stale markers)", c.Name, len(findings), expectMatches)
+	}
+
+	// The report-only contract: no fix, no diff, no working-tree change.
+	after := snapshotTree(t, ".")
+	if before != after {
+		t.Fatalf("%s: report-only species modified the working tree — it must produce findings but NO diff", c.Name)
+	}
+}
+
+// snapshotTree returns a stable digest of every regular file under root (path +
+// content), so the detect-only harness can prove a report-only run leaves the
+// working tree byte-identical. It mirrors the intent of scout's non-mutation
+// snapshot test without depending on that internal helper.
+func snapshotTree(t *testing.T, root string) string {
+	t.Helper()
+	var b strings.Builder
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		fmt.Fprintf(&b, "%s\x00%s\x00", path, data)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("snapshot working tree under %q: %v", root, err)
+	}
+	return b.String()
+}
+
 // mustAbs resolves p to an absolute path, failing the test on error. Used to
 // pin every case path before the harness chdirs into the fixture repo.
 func mustAbs(t *testing.T, p string) string {

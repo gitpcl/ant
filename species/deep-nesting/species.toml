@@ -1,0 +1,17 @@
+name        = "deep-nesting"
+description = "Detects conditional nesting at or beyond the configured depth threshold (default 3) and proposes guard-clause / early-return flattening that preserves behavior; see detect.yml. Propose-only (the verified-refactor showcase)."
+severity    = "medium"
+languages   = ["go"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+[verify]
+checks = ["compile", "tests:affected", "detector-clears"]

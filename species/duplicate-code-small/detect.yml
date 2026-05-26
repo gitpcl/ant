@@ -1,0 +1,41 @@
+# Detector rule for the duplicate-code-small species (LLM-assisted, ADR-0002 /
+# ADR-0004). Sprint 019 — maintainability.
+#
+# Smell: a small block of logic copy-pasted into more than one function. The
+# duplicated code drifts over time (a fix applied to one copy and not the other)
+# and obscures that the two sites share an intent. The canonical refactor is to
+# extract the block into a shared helper called from each site.
+#
+# WHY this shape (and how detector-clears clears): ast-grep matches syntax, not
+# "is this duplicated across the file" — it cannot count cross-function
+# occurrences in one rule. This rule nominates the recognizable duplicated block —
+# a clamp-low `if $V < 0 { $V = 0 }` — but ONLY when it FOLLOWS a local
+# `$V := $INIT` in the same function (`follows ... stopBy: end`). That discriminator
+# is what makes the rule both precise AND self-clearing:
+#   * The DUPLICATION sites compute the value locally (`v := raw*2`), so a `:=`
+#     precedes the clamp block — they match.
+#   * The extracted HELPER takes the value as a PARAMETER (`func clamp(v int)`),
+#     so NO `:=` precedes its clamp block — it does NOT match.
+# After the fix consolidates both copies into one helper, every remaining
+# occurrence is parameter-fed, so this rule matches zero times — detector-clears
+# passes. The rule + fix are designed together (Sprint-018 convention).
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: it nominates a
+# recognizable small-duplicate shape; the verify gate (compile + tests:affected +
+# detector-clears) confirms the proposed extraction compiles, keeps both callers'
+# results identical, and leaves no locally-computed duplicate behind. severity is
+# `warning` so `ast-grep scan` exits 0 on a match. auto_apply is false: where to
+# draw the helper boundary is a judgement call, so the verified extraction is
+# always staged for review.
+id: duplicate-code-small
+language: go
+severity: warning
+message: 'Small repeated block duplicated across functions — extract a shared helper so the logic lives in one place'
+rule:
+  pattern: |
+    if $V < 0 {
+    	$V = 0
+    }
+  follows:
+    pattern: $V := $INIT
+    stopBy: end

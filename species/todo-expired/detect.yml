@@ -1,0 +1,33 @@
+# Detector rule for the todo-expired species (REPORT-ONLY, Sprint 019).
+#
+# Smell: a stale in-code marker — a TODO that was dated and never resolved, a
+# FIXME that references an issue (which may be closed or stale), or a HACK that
+# admits a temporary workaround. These accumulate in any long-lived codebase and
+# silently rot; surfacing them lets a team triage what is actually still relevant.
+#
+# WHAT MATCHES (the staleness signal): a comment containing
+#   * `TODO(YYYY-MM-DD)` — a DATED todo (the date makes "stale" checkable), OR
+#   * `FIXME(#NNN)`       — an ISSUE-REFERENCED fixme (may point at a dead/closed
+#                           issue), OR
+#   * `HACK`              — a self-admitted workaround.
+# A bare `TODO:` with no date or reference is INTENTIONALLY NOT matched — a normal
+# forward-looking note is not "expired." This keeps the rule to the markers that
+# carry an explicit staleness/triage signal. Tighten or widen the regex to change
+# what counts as expired (this is the documented species default; ast-grep rules
+# are static YAML referenced by path, so any "max age / owner allow-list"
+# parameter would be an engine change — see .harness/progress_log.md Sprint-019
+# ENGINE-GAP #2, out of scope for a species sprint).
+#
+# REPORT-ONLY: this species proposes NO fix and changes NO code. It is surfaced
+# through `ant scout`, which never writes the working tree. It also ships DISABLED
+# by default (species.toml enabled=false) because it is noisy in immature repos;
+# a team opts in per-project via `[species.todo-expired] enabled = true` in
+# ant.toml (the same opt-in mechanism as ai-slop). severity is `warning` so
+# `ast-grep scan` exits 0 on a match.
+id: todo-expired
+language: go
+severity: warning
+message: 'Stale TODO/FIXME/HACK marker (dated TODO, issue-referenced FIXME, or HACK) — triage: resolve, re-file, or remove'
+rule:
+  kind: comment
+  regex: '(TODO\([0-9]{4}-[0-9]{2}-[0-9]{2}\)|FIXME\(#[0-9]+\)|HACK)'
