@@ -154,7 +154,16 @@ func (d *astgrepDetector) toFinding(m astGrepMatch) engine.Finding {
 		Severity: mapSeverity(m.Severity),
 		Message:  m.Message,
 		Snippet:  m.Text,
-		Meta:     map[string]string{"ruleId": m.RuleID},
+		// SourceLines is ast-grep's `lines`: the full source line(s) the match
+		// covers WITH indentation, so a deterministic delete/rewrite fix can patch
+		// lines that byte-match the working tree (lifting the column-0-only limit of
+		// using the indentation-stripped `text`). Replacement is the per-match
+		// `replacement` produced by a rule's `fix:` block; it is empty when the rule
+		// declares no fix. Both are omitempty on the Finding, so the --json contract
+		// is byte-unchanged for rules that capture neither (TECHSPEC §12).
+		SourceLines: m.Lines,
+		Replacement: m.Replacement,
+		Meta:        map[string]string{"ruleId": m.RuleID},
 	}
 }
 
@@ -177,15 +186,18 @@ func mapSeverity(token string) engine.Severity {
 
 // astGrepMatch mirrors the relevant subset of ast-grep's RuleMatchJSON output
 // (camelCase fields). Only the fields Ant maps to a Finding are decoded; the
-// rest (charCount, language, metaVariables, labels, metadata) are ignored.
+// rest (charCount, metaVariables, labels, metadata) are ignored. `lines` carries
+// the full source line(s) with indentation; `replacement` is present only when
+// the rule has a `fix:` block (the suggested new text for the matched span).
 type astGrepMatch struct {
-	Text     string       `json:"text"`
-	Range    astGrepRange `json:"range"`
-	File     string       `json:"file"`
-	Lines    string       `json:"lines"`
-	RuleID   string       `json:"ruleId"`
-	Severity string       `json:"severity"`
-	Message  string       `json:"message"`
+	Text        string       `json:"text"`
+	Range       astGrepRange `json:"range"`
+	File        string       `json:"file"`
+	Lines       string       `json:"lines"`
+	Replacement string       `json:"replacement"`
+	RuleID      string       `json:"ruleId"`
+	Severity    string       `json:"severity"`
+	Message     string       `json:"message"`
 }
 
 type astGrepRange struct {

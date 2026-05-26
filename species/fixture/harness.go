@@ -322,6 +322,12 @@ func buildFixTask(f engine.Finding) engine.FixTask {
 			File:    f.File,
 			Span:    f.Span,
 			Snippet: f.Snippet,
+			// Mirror colony.buildFixTask: carry the verbatim source line(s) and any
+			// ast-grep rewrite suggestion so the deterministic fixer's indented
+			// delete-match and rewrite transforms patch lines that byte-match the
+			// working tree.
+			SourceLines: f.SourceLines,
+			Replacement: f.Replacement,
 		},
 	}
 }

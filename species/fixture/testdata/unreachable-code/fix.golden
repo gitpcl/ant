@@ -1,0 +1,4 @@
+--- a/repo.ts
++++ b/repo.ts
+@@ -9,1 +9,0 @@
+-    console.log("never runs");

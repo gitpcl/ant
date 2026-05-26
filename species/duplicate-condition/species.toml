@@ -1,0 +1,17 @@
+name        = "duplicate-condition"
+description = "Flags a repeated if/else-if condition or duplicated branch marked //ant:duplicate-condition (propose-only)"
+severity    = "medium"
+languages   = ["ts"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind      = "deterministic"
+transform = "delete-match"
+
+[verify]
+checks = ["compile", "detector-clears"]

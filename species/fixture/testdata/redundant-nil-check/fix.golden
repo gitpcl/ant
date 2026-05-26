@@ -1,0 +1,4 @@
+--- a/repo.ts
++++ b/repo.ts
+@@ -8,1 +8,0 @@
+-  if (o === null) return 0;

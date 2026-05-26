@@ -274,6 +274,13 @@ func buildFixTask(f engine.Finding) engine.FixTask {
 			File:    f.File,
 			Span:    f.Span,
 			Snippet: f.Snippet,
+			// Carry the verbatim source line(s) and any rewrite suggestion so the
+			// deterministic fixer patches lines that byte-match the working tree
+			// (indented delete-match) and can build a rewrite hunk (old span → new
+			// text) without re-reading the tree. Both are zero-value/absent for
+			// detectors that capture neither, preserving the prior behavior.
+			SourceLines: f.SourceLines,
+			Replacement: f.Replacement,
 		},
 	}
 }

@@ -5,10 +5,13 @@
 // top from .ant/species/ by the species resolver, which reads built-ins through
 // FS() below.
 //
-// The six embedded species and their trust defaults are fixed by ADR-0002
+// The launch embedded species and their trust defaults are fixed by ADR-0002
 // (docs/decisions/0002-launch-species.md): unused-import, dead-code (M2,
 // deterministic, auto_apply=true), n+1-query, missing-await, nil-deref (M3, llm,
-// auto_apply=false), and ai-slop (M4, llm, enabled=false).
+// auto_apply=false), and ai-slop (M4, llm, enabled=false). The Sprint 016
+// species-cleanup wave adds further deterministic species (auto_apply=true):
+// unused-variable (delete-match, incl. indented spans) and redundant-conversion
+// (rewrite, old span → ast-grep fix: output).
 package builtins
 
 import "embed"
@@ -19,7 +22,7 @@ import "embed"
 // embed.FS paths are always slash-separated and rooted at this directory, so the
 // resolver sees "unused-import/species.toml", etc.
 //
-//go:embed unused-import dead-code n+1-query missing-await nil-deref ai-slop
+//go:embed unused-import dead-code unused-variable redundant-conversion unreachable-code empty-block duplicate-condition redundant-nil-check ineffective-assignment n+1-query missing-await nil-deref ai-slop
 var files embed.FS
 
 // FS returns the embedded built-in species tree as a read-only fs.FS-compatible

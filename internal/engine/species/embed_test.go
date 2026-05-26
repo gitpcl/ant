@@ -16,18 +16,25 @@ var adr0002 = map[string]struct {
 	autoApply bool
 	enabled   bool
 }{
-	"unused-import": {FixKindDeterministic, true, true},
-	"dead-code":     {FixKindDeterministic, true, true},
-	"n+1-query":     {FixKindLLM, false, true},
-	"missing-await": {FixKindLLM, false, true},
-	"nil-deref":     {FixKindLLM, false, true},
-	"ai-slop":       {FixKindLLM, false, false},
+	"unused-import":          {FixKindDeterministic, true, true},
+	"dead-code":              {FixKindDeterministic, true, true},
+	"unused-variable":        {FixKindDeterministic, true, true},
+	"redundant-conversion":   {FixKindDeterministic, true, true},
+	"unreachable-code":       {FixKindDeterministic, true, true},
+	"empty-block":            {FixKindDeterministic, false, true},
+	"duplicate-condition":    {FixKindDeterministic, false, true},
+	"redundant-nil-check":    {FixKindDeterministic, false, true},
+	"ineffective-assignment": {FixKindDeterministic, false, true},
+	"n+1-query":              {FixKindLLM, false, true},
+	"missing-await":          {FixKindLLM, false, true},
+	"nil-deref":              {FixKindLLM, false, true},
+	"ai-slop":                {FixKindLLM, false, false},
 }
 
-// TestEmbed_BuiltinsDiscoverableNoDisk is the core feature-3 assertion: the six
+// TestEmbed_BuiltinsDiscoverableNoDisk is the core feature-3 assertion: the
 // built-in species load from the EMBEDDED FS with no on-disk species/ directory
 // present at runtime. The resolver is given an empty userRoot, so the only
-// source is builtins.FS().
+// source is builtins.FS(). The expected set is the adr0002 table above.
 func TestEmbed_BuiltinsDiscoverableNoDisk(t *testing.T) {
 	// userRoot "" => the resolver never touches the disk; built-ins come purely
 	// from the embedded tree compiled into the test binary.

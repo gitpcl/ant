@@ -22,8 +22,33 @@ type Finding struct {
 	Span     Span              `json:"span"` // start/end line+col
 	Severity Severity          `json:"severity"`
 	Message  string            `json:"message"`
-	Snippet  string            `json:"snippet"`        // the localized code span
+	Snippet  string            `json:"snippet"`        // the localized code span (matcher text; indentation stripped)
 	Meta     map[string]string `json:"meta,omitempty"` // detector-specific extras
+
+	// SourceLines is the VERBATIM source line(s) the Span covers, INCLUDING
+	// leading indentation, as the working tree actually holds them. Snippet is the
+	// matcher's indentation-stripped text (ast-grep `text`); SourceLines is the
+	// matcher's full-line capture (ast-grep `lines`). A deterministic delete/rewrite
+	// fix must emit `-`/` ` patch lines that byte-match the working tree, so it
+	// builds the patch from SourceLines, not Snippet (verify/scratch.go exact-matches
+	// removed lines). When empty the fixer falls back to Snippet (the old
+	// column-0-only behavior).
+	//
+	// json:"-" deliberately: this is fixer-internal mechanics derived from the
+	// detector, NOT part of the stable --json front-door event contract (TECHSPEC
+	// §12). The colony builds the FixTask from the in-memory Finding the detector
+	// returns (colony/loop.go buildFixTask), so the fixer always has it; keeping it
+	// off the wire leaves the scout/--json golden byte-stable and the persisted
+	// StagedRecord lean (the diff is already produced before staging, so a
+	// re-loaded Finding never needs it again).
+	SourceLines string `json:"-"`
+
+	// Replacement is the suggested new text for the Span, when the detector's rule
+	// carries an ast-grep `fix:` block (the per-match `replacement`). It feeds the
+	// deterministic `rewrite` transform (old span → new text). json:"-" for the
+	// same reason as SourceLines: it is consumed in-process by the fixer and is not
+	// part of the --json event contract, so adding it does not change the wire shape.
+	Replacement string `json:"-"`
 }
 
 // CodeContext carries the code surrounding a finding, supplied to a Fixer so it
@@ -32,9 +57,16 @@ type CodeContext struct {
 	File     string `json:"file"`
 	Language string `json:"language"`
 	Span     Span   `json:"span"`    // the finding's span within the file
-	Snippet  string `json:"snippet"` // the localized code span
+	Snippet  string `json:"snippet"` // the localized code span (matcher text; indentation stripped)
 	Before   string `json:"before"`  // lines immediately preceding the span
 	After    string `json:"after"`   // lines immediately following the span
+	// SourceLines mirrors Finding.SourceLines: the verbatim, indentation-preserving
+	// source line(s) the Span covers, so the deterministic fixer's delete/rewrite
+	// patch byte-matches the working tree. Empty falls back to Snippet.
+	SourceLines string `json:"sourceLines,omitempty"`
+	// Replacement mirrors Finding.Replacement: the ast-grep `fix:` suggestion for
+	// the Span, consumed by the `rewrite` transform. Empty means no rewrite source.
+	Replacement string `json:"replacement,omitempty"`
 }
 
 // FixTask is one unit of work handed to a Fixer: a single finding plus the code

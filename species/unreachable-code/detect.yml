@@ -1,0 +1,33 @@
+# Detector rule for the unreachable-code species (deterministic, Sprint 016
+# species-cleanup wave; auto_apply).
+#
+# ast-grep is a SYNTACTIC matcher (TECHSPEC §2) and does not do control-flow
+# analysis, so the species targets a statement the author has EXPLICITLY MARKED
+# unreachable with an `//ant:unreachable-code` doc comment placed directly after a
+# terminating statement (return/throw/break/continue). The deterministic
+# delete-match fix then deletes that statement; the indentation-correct
+# delete-match path removes the verbatim source line(s) (ast-grep `lines` ->
+# Finding.SourceLines) so an indented statement is removed cleanly.
+#
+# Language is TypeScript: the marker is matched via `follows: comment`, the
+# statement-level relation that works in tree-sitter-typescript but NOT in
+# tree-sitter-go (comments inside a Go block are not normal statement siblings).
+# A Go variant would need a non-comment discriminator.
+#
+# Trust: `detector-clears` re-runs this rule over the patched tree and requires
+# zero matches (the marked statement is gone). `compile` is a vacuous pass on the
+# TS-only fixture repo (`go build ./...` matches no Go packages, exits 0), so
+# removal safety rests on the explicit marker + detector-clears — a deliberate
+# trust gradient (a TS typecheck verifier would make `compile` a hard proof).
+id: unreachable-code-ts
+language: typescript
+severity: warning
+message: 'Statement marked //ant:unreachable-code follows a terminating statement and can be removed'
+rule:
+  any:
+    - kind: expression_statement
+    - kind: return_statement
+    - kind: if_statement
+  follows:
+    kind: comment
+    regex: 'ant:unreachable-code'

@@ -32,6 +32,55 @@ func cases() []fixture.Case {
 			GoldenPath: filepath.Join("testdata", "dead-code", "fix.golden"),
 		},
 		{
+			Name:       "unused-variable",
+			SpeciesDir: filepath.Join(speciesRoot, "unused-variable"),
+			RepoDir:    filepath.Join("testdata", "unused-variable", "repo"),
+			GoldenPath: filepath.Join("testdata", "unused-variable", "fix.golden"),
+		},
+		{
+			Name:       "redundant-conversion",
+			SpeciesDir: filepath.Join(speciesRoot, "redundant-conversion"),
+			RepoDir:    filepath.Join("testdata", "redundant-conversion", "repo"),
+			GoldenPath: filepath.Join("testdata", "redundant-conversion", "fix.golden"),
+		},
+		{
+			Name:       "unreachable-code",
+			SpeciesDir: filepath.Join(speciesRoot, "unreachable-code"),
+			RepoDir:    filepath.Join("testdata", "unreachable-code", "repo"),
+			GoldenPath: filepath.Join("testdata", "unreachable-code", "fix.golden"),
+		},
+		{
+			// empty-block, duplicate-condition, redundant-nil-check, and
+			// ineffective-assignment are PROPOSE-ONLY species (auto_apply = false).
+			// The fixture harness asserts the detect→fix→verify→golden pipeline (the
+			// proposed diff) regardless of trust; the propose-only trust default is
+			// asserted separately by the embed_test.go adr0002 table
+			// (EffectiveAutoApply == false), and the staged-not-applied-under---apply
+			// behavior is proven generically by the colony/species trust tests.
+			Name:       "empty-block",
+			SpeciesDir: filepath.Join(speciesRoot, "empty-block"),
+			RepoDir:    filepath.Join("testdata", "empty-block", "repo"),
+			GoldenPath: filepath.Join("testdata", "empty-block", "fix.golden"),
+		},
+		{
+			Name:       "duplicate-condition",
+			SpeciesDir: filepath.Join(speciesRoot, "duplicate-condition"),
+			RepoDir:    filepath.Join("testdata", "duplicate-condition", "repo"),
+			GoldenPath: filepath.Join("testdata", "duplicate-condition", "fix.golden"),
+		},
+		{
+			Name:       "redundant-nil-check",
+			SpeciesDir: filepath.Join(speciesRoot, "redundant-nil-check"),
+			RepoDir:    filepath.Join("testdata", "redundant-nil-check", "repo"),
+			GoldenPath: filepath.Join("testdata", "redundant-nil-check", "fix.golden"),
+		},
+		{
+			Name:       "ineffective-assignment",
+			SpeciesDir: filepath.Join(speciesRoot, "ineffective-assignment"),
+			RepoDir:    filepath.Join("testdata", "ineffective-assignment", "repo"),
+			GoldenPath: filepath.Join("testdata", "ineffective-assignment", "fix.golden"),
+		},
+		{
 			Name:       "nil-deref",
 			SpeciesDir: filepath.Join(speciesRoot, "nil-deref"),
 			RepoDir:    filepath.Join("testdata", "nil-deref", "repo"),

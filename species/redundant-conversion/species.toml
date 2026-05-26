@@ -1,0 +1,17 @@
+name        = "redundant-conversion"
+description = "Rewrites an unnecessary type conversion marked //ant:redundant-conversion to its inner expression"
+severity    = "low"
+languages   = ["ts"]
+auto_apply  = true
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind      = "deterministic"
+transform = "rewrite"
+
+[verify]
+checks = ["compile", "detector-clears"]

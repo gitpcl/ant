@@ -1,0 +1,17 @@
+name        = "ineffective-assignment"
+description = "Flags a variable assigned then overwritten before any read, marked //ant:ineffective-assignment (propose-only)"
+severity    = "low"
+languages   = ["ts"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind      = "deterministic"
+transform = "delete-match"
+
+[verify]
+checks = ["compile", "detector-clears"]

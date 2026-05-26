@@ -1,0 +1,17 @@
+name        = "redundant-nil-check"
+description = "Flags a null/nil check marked //ant:redundant-nil-check that is impossible or follows a dereference (propose-only)"
+severity    = "medium"
+languages   = ["ts"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind      = "deterministic"
+transform = "delete-match"
+
+[verify]
+checks = ["compile", "detector-clears"]

@@ -1,0 +1,25 @@
+# Detector rule for the empty-block species (deterministic delete-match,
+# PROPOSE-ONLY — auto_apply = false). An empty block is often a latent bug (a
+# forgotten body) rather than safe-to-delete dead weight, so the trust default is
+# propose-only: the fix is staged for `ant review` and is NEVER auto-applied even
+# under `--apply` (the trust-gradient acceptance criterion — resolution forces a
+# false effective auto_apply for this species).
+#
+# ast-grep is SYNTACTIC, so the species targets an empty-bodied statement the
+# author has EXPLICITLY MARKED with `//ant:empty-block`. The single-line
+# `if ($COND) {}` form is matched and removed verbatim by delete-match; the
+# proposed deletion is what review evaluates.
+#
+# Language is TypeScript (the marker `follows: comment` works at statement level
+# in tree-sitter-typescript). `detector-clears` proves the empty-block shape is
+# gone after the (staged) fix; `compile` is a vacuous pass on the TS-only fixture
+# repo, so the proof rests on the marker + detector-clears.
+id: empty-block-ts
+language: typescript
+severity: warning
+message: 'Empty block marked //ant:empty-block (propose-only; review before removing)'
+rule:
+  pattern: if ($COND) {}
+  follows:
+    kind: comment
+    regex: 'ant:empty-block'

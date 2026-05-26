@@ -71,6 +71,46 @@ func TestASTGrepParsesRecordedMatches(t *testing.T) {
 	}
 }
 
+// TestASTGrepMapsLinesAndReplacement asserts the adapter surfaces ast-grep's
+// `lines` (verbatim source line, indentation preserved) onto Finding.SourceLines
+// and a rule `fix:` block's `replacement` onto Finding.Replacement — the two
+// fields the deterministic indented-delete and rewrite transforms consume. A
+// match with neither leaves both empty (the omitted-field path that keeps the
+// --json contract byte-stable).
+func TestASTGrepMapsLinesAndReplacement(t *testing.T) {
+	payload := []byte(`[
+	  {"text":"int(x)","lines":"\treturn int(x)","replacement":"x",
+	   "range":{"start":{"line":3,"column":8},"end":{"line":3,"column":14}},
+	   "file":"conv.go","ruleId":"redundant-conversion","severity":"warning","message":"redundant"},
+	  {"text":"import \"os\"",
+	   "range":{"start":{"line":2,"column":0},"end":{"line":2,"column":11}},
+	   "file":"main.go","ruleId":"unused-import","severity":"error","message":"unused"}
+	]`)
+	runner := func(_ context.Context, _ string, _ []string) ([]byte, error) { return payload, nil }
+	det := NewASTGrep("redundant-conversion", "detect.yml", withRunner(runner))
+
+	findings, err := det.Detect(context.Background(), engine.Scope{Root: "."})
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if len(findings) != 2 {
+		t.Fatalf("got %d findings, want 2", len(findings))
+	}
+
+	// First match: a rewrite candidate — both new fields populated.
+	if findings[0].SourceLines != "\treturn int(x)" {
+		t.Errorf("SourceLines = %q, want the verbatim indented source line", findings[0].SourceLines)
+	}
+	if findings[0].Replacement != "x" {
+		t.Errorf("Replacement = %q, want the ast-grep fix: output", findings[0].Replacement)
+	}
+
+	// Second match: no replacement, lines==text — Replacement empty (omitted path).
+	if findings[1].Replacement != "" {
+		t.Errorf("Replacement = %q, want empty for a rule with no fix:", findings[1].Replacement)
+	}
+}
+
 func TestASTGrepEmptyOutputIsNoFindings(t *testing.T) {
 	for _, payload := range [][]byte{nil, []byte("  \n"), []byte("[]")} {
 		runner := func(_ context.Context, _ string, _ []string) ([]byte, error) {

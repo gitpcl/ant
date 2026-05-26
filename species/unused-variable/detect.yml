@@ -1,0 +1,55 @@
+# Detector rule for the unused-variable species (deterministic, ADR-0002).
+#
+# ast-grep is a SYNTACTIC matcher (TECHSPEC §2) and cannot itself prove a
+# variable is semantically unused, so this species — exactly like dead-code —
+# targets a declaration the author has EXPLICITLY MARKED removable with an
+# `//ant:unused-variable` doc comment (the same tool-directive convention shape
+# Go uses for `//go:build` and `//lint:ignore`). The deterministic delete-match
+# fix then removes that declaration, and the verifier gate is the safety proof.
+#
+# Two language rules in one file (ast-grep multi-document `---`):
+#
+#   * Go (unused-variable-go): a TOP-LEVEL `var` declaration following the marker
+#     comment, constrained to `source_file` so the match sits at column 0. Go
+#     fails to compile a function with an unused LOCAL, so a body-local is already
+#     removed by the compiler's own check — the meaningful Go target is a
+#     package-level var (Go does NOT flag those). The `compile` gate still
+#     protects it: if the var is referenced anywhere in the package, removing it
+#     breaks the build (`undefined: <name>`) and the fix is SKIPPED.
+#
+#   * TypeScript (unused-variable-ts): an IN-FUNCTION `const` following the marker
+#     comment. TS does not treat an unused local as a compile error, so this is
+#     the meaningful in-body case. The comment-follows relation works for
+#     statement-level matches in tree-sitter-typescript (it does not in
+#     tree-sitter-go, which is why the Go rule stays top-level). `detector-clears`
+#     is the trust proof here — `compile` is a vacuous pass on a TS-only repo
+#     (`go build ./...` matches no Go packages and exits 0), so removal safety
+#     rests on the explicit marker plus the detector reporting zero matches
+#     post-fix.
+#
+# The deterministic delete-match fix deletes the VERBATIM source line(s) the
+# matcher captured (ast-grep `lines`, carried as Finding.SourceLines), so the
+# indented TS `const` is removed with its leading whitespace intact and the patch
+# byte-matches the working tree (the column-0-only limitation is lifted). The
+# marker only nominates a candidate; the verifier gate decides.
+id: unused-variable-go
+language: go
+severity: warning
+message: 'Variable marked //ant:unused-variable is never referenced and can be removed'
+rule:
+  pattern: var $VAR = $EXPR
+  inside:
+    kind: source_file
+  follows:
+    kind: comment
+    regex: 'ant:unused-variable'
+---
+id: unused-variable-ts
+language: typescript
+severity: warning
+message: 'Variable marked //ant:unused-variable is never referenced and can be removed'
+rule:
+  pattern: const $VAR = $EXPR
+  follows:
+    kind: comment
+    regex: 'ant:unused-variable'

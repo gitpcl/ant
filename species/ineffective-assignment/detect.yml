@@ -1,0 +1,37 @@
+# Detector rule for the ineffective-assignment species (deterministic
+# delete-match, PROPOSE-ONLY — auto_apply = false).
+#
+# An ineffective (dead) assignment is one whose value is overwritten before it is
+# ever read. Removing it is only SAFE when the discarded right-hand side is
+# SIDE-EFFECT-FREE: deleting `let x = 1` is harmless, but deleting
+# `let x = sideEffect()` would drop the side effect and change behavior. The
+# sprint's trust rule is "auto when trivial, else propose-only".
+#
+# IMPORTANT trust note: effective auto_apply is a PER-SPECIES property in this
+# engine (resolve.go / driver.go), not per-finding — there is no per-finding trust
+# knob. So this species cannot auto-apply only the trivial subset while staging
+# the side-effecting subset within ONE species without a per-finding-trust engine
+# feature (out of scope). The conservative, honest choice is auto_apply = false:
+# every proposed removal is staged for `ant review`, NEVER auto-applied even under
+# `--apply`. The trivial-vs-side-effecting distinction is instead enforced AT
+# DETECTION: the rule matches ONLY a side-effect-free literal RHS (the `E` regex
+# below requires the RHS to begin with a digit — a numeric literal), so a
+# side-effecting RHS such as `sideEffect()` is NOT matched and is left entirely
+# untouched. The fixture demonstrates both: the trivial `let x = 1` is proposed
+# (staged); the side-effecting `let y = sideEffect()` is never nominated.
+#
+# Language is TypeScript (the `follows: comment` statement relation works there).
+# `detector-clears` confirms the marked trivial assignment is gone after the
+# staged fix; `compile` is a vacuous pass on the TS-only fixture repo.
+id: ineffective-assignment-ts
+language: typescript
+severity: warning
+message: 'Variable marked //ant:ineffective-assignment is overwritten before read; trivial (literal) RHS only (propose-only)'
+rule:
+  pattern: let $V = $E
+  follows:
+    kind: comment
+    regex: 'ant:ineffective-assignment'
+constraints:
+  E:
+    regex: '^[0-9]'

@@ -1,0 +1,5 @@
+--- a/repo.ts
++++ b/repo.ts
+@@ -7,1 +7,1 @@
+-  return String(n);
++  return n;

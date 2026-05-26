@@ -1,0 +1,24 @@
+# Detector rule for the duplicate-condition species (deterministic delete-match,
+# PROPOSE-ONLY — auto_apply = false). A repeated condition (a second `if (x > 0)`
+# or a duplicated else-if/switch case) is dead because the FIRST branch already
+# captured the case — but which branch is the intended one is a human judgment,
+# so the species proposes deleting the later duplicate and stays propose-only:
+# staged for `ant review`, NEVER auto-applied even under `--apply`.
+#
+# ast-grep is SYNTACTIC and cannot itself prove two conditions are equivalent, so
+# the species targets the duplicate branch the author EXPLICITLY MARKED with
+# `//ant:duplicate-condition`. delete-match removes the marked branch verbatim
+# (indentation preserved).
+#
+# Language is TypeScript (the `follows: comment` statement relation works there).
+# `detector-clears` confirms the marked duplicate is gone after the staged fix;
+# `compile` is a vacuous pass on the TS-only fixture repo.
+id: duplicate-condition-ts
+language: typescript
+severity: warning
+message: 'Branch marked //ant:duplicate-condition repeats an earlier condition (propose-only)'
+rule:
+  kind: if_statement
+  follows:
+    kind: comment
+    regex: 'ant:duplicate-condition'

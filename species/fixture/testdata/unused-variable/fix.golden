@@ -1,0 +1,8 @@
+--- a/repo.go
++++ b/repo.go
+@@ -9,1 +9,0 @@
+-var unusedScratch = 41 + 1
+--- a/repo.ts
++++ b/repo.ts
+@@ -9,1 +9,0 @@
+-  const scratch = a * b;

@@ -1,0 +1,24 @@
+# Detector rule for the redundant-nil-check species (deterministic delete-match,
+# PROPOSE-ONLY — auto_apply = false). A null/nil check that is impossible (the
+# value was already dereferenced above, so it cannot be null) is dead code — but
+# removing a guard is exactly the kind of change a human should sign off on, so
+# the species proposes deleting the redundant check and stays propose-only:
+# staged for `ant review`, NEVER auto-applied even under `--apply`.
+#
+# ast-grep is SYNTACTIC and cannot do the nullability analysis itself, so the
+# species targets the check the author EXPLICITLY MARKED with
+# `//ant:redundant-nil-check`. delete-match removes the marked `if (x === null)`
+# guard verbatim (indentation preserved).
+#
+# Language is TypeScript (the `follows: comment` statement relation works there).
+# `detector-clears` confirms the marked check is gone after the staged fix;
+# `compile` is a vacuous pass on the TS-only fixture repo.
+id: redundant-nil-check-ts
+language: typescript
+severity: warning
+message: 'Null check marked //ant:redundant-nil-check is impossible or follows a dereference (propose-only)'
+rule:
+  kind: if_statement
+  follows:
+    kind: comment
+    regex: 'ant:redundant-nil-check'

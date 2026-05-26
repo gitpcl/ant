@@ -1,0 +1,36 @@
+# Detector rule for the redundant-conversion species (deterministic rewrite,
+# Sprint 016 species-cleanup wave).
+#
+# ast-grep is a SYNTACTIC matcher (TECHSPEC §2): `String($INNER)` matches every
+# String() call, not only the redundant ones, so — like dead-code and
+# unused-variable — the species targets a conversion the author has EXPLICITLY
+# MARKED with an `//ant:redundant-conversion` doc comment. The deterministic
+# `rewrite` transform then replaces the matched `String($INNER)` span with the
+# rule's `fix:` output (`$INNER`), splicing it into the verbatim source line so
+# indentation and the rest of the line are preserved.
+#
+# Language is TypeScript: the marker is matched via `inside: { follows: comment }`
+# — the enclosing statement follows the marker comment. This statement-level
+# comment relation works in tree-sitter-typescript but NOT in tree-sitter-go
+# (where comments inside a block are not normal statement siblings), which is why
+# this species is TS-only; a Go rewrite species would need a non-comment
+# discriminator. The match node is the `String(...)` call itself (a sub-span of
+# its line), and the rewrite transform replaces exactly that span.
+#
+# Trust: `detector-clears` re-runs this rule over the patched tree and requires
+# zero matches (the `String(...)` shape is gone after the rewrite). `compile` is a
+# vacuous pass on this TS-only fixture (`go build ./...` matches no Go packages),
+# so removal safety rests on the explicit marker plus detector-clears — the same
+# gradient the TS unused-variable case uses. A TS-toolchain compile/typecheck
+# verifier (future work) would make `compile` a hard proof here too.
+id: redundant-conversion-ts
+language: typescript
+severity: warning
+message: 'Redundant String() conversion marked //ant:redundant-conversion; the value is already a string'
+rule:
+  pattern: String($INNER)
+  inside:
+    follows:
+      kind: comment
+      regex: 'ant:redundant-conversion'
+fix: '$INNER'
