@@ -79,11 +79,28 @@ func DeterministicFixer(m species.Manifest) (engine.Fixer, error) {
 // never be silently driven through a recorded LLM response (mirroring the guard
 // in DeterministicFixer). patch is the file path + unified-diff body to apply.
 func RecordedFixer(patch engine.FileDiff) FixerFactory {
+	return RecordedFixerMulti(patch)
+}
+
+// RecordedFixerMulti is the MULTI-FILE variant of RecordedFixer: it records a
+// ProposedDiff whose patch spans more than one file. A security remediation such
+// as hardcoded-secret (Sprint 021) edits the SOURCE (replace the literal with an
+// os.Getenv read) AND a config example (add the variable to .env.example) in one
+// fix, so its recorded response is several FileDiffs. The harness drives the whole
+// multi-file diff through the SAME real verifier gate (compile + the secret-
+// scanner-clears command verifier + detector-clears) over a scratch copy, so the
+// recorded fix is accepted only if every file applies, the project still builds,
+// the scanner finds no secret, and the detector clears. RecordedFixer is the
+// single-file convenience wrapper over this.
+func RecordedFixerMulti(patches ...engine.FileDiff) FixerFactory {
 	return func(m species.Manifest) (engine.Fixer, error) {
 		if m.Fix.Kind != species.FixKindLLM {
 			return nil, fmt.Errorf("fixture: RecordedFixer used for non-llm species %q (fix kind %q)", m.Name, m.Fix.Kind)
 		}
-		return &recordedFixer{species: m.Name, patch: patch}, nil
+		if len(patches) == 0 {
+			return nil, fmt.Errorf("fixture: RecordedFixerMulti for %q needs at least one FileDiff", m.Name)
+		}
+		return &recordedFixer{species: m.Name, patches: patches}, nil
 	}
 }
 
@@ -91,22 +108,26 @@ func RecordedFixer(patch engine.FileDiff) FixerFactory {
 // pre-recorded ProposedDiff regardless of the task, so the harness exercises the
 // detect→fix→verify→golden path without a network or a model. Provenance is
 // marked "recorded (<species>)" so a golden/diff can never be mistaken for a
-// live-model run.
+// live-model run. patches holds one entry per edited file (usually one; a
+// multi-file remediation like hardcoded-secret records several).
 type recordedFixer struct {
 	species string
-	patch   engine.FileDiff
+	patches []engine.FileDiff
 }
 
 // compile-time assertion that recordedFixer satisfies engine.Fixer.
 var _ engine.Fixer = (*recordedFixer)(nil)
 
-// Fix returns the recorded patch as the proposed diff for the task. It is pure
-// and stateless (the one-task adapter contract, TECHSPEC §10): every call yields
-// the same recorded response, which the real verifier gate then accepts only if
-// it genuinely compiles, passes affected tests, and clears the detector.
+// Fix returns the recorded patch(es) as the proposed diff for the task. It is
+// pure and stateless (the one-task adapter contract, TECHSPEC §10): every call
+// yields the same recorded response, which the real verifier gate then accepts
+// only if it genuinely compiles, passes affected tests / the command gate, and
+// clears the detector.
 func (f *recordedFixer) Fix(_ context.Context, _ engine.FixTask) (engine.ProposedDiff, error) {
+	files := make([]engine.FileDiff, len(f.patches))
+	copy(files, f.patches)
 	return engine.ProposedDiff{
-		Files: []engine.FileDiff{f.patch},
+		Files: files,
 		Fixer: fmt.Sprintf("recorded (%s)", f.species),
 	}, nil
 }

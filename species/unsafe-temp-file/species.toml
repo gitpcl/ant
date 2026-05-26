@@ -1,0 +1,44 @@
+name        = "unsafe-temp-file"
+description = "Detects insecure temp-file handling — a hardcoded, predictable temp path (e.g. \"/tmp/app-cache.tmp\") written directly. The fix switches to a secure temp API (os.CreateTemp) that picks an unpredictable name with safe perms. security-stage, propose-only; see detect.yml + fix.md"
+severity    = "medium"
+languages   = ["go"]
+auto_apply  = false
+enabled     = true
+
+# SECURITY species (Sprint 021 P6 — Security Hygiene). Writing to a PREDICTABLE
+# temp path (a hardcoded "/tmp/<fixed-name>") is a classic local-attack surface:
+# an attacker who can write to the temp directory can pre-create the path as a
+# SYMLINK (redirecting the write to a file the victim process can reach but the
+# attacker cannot — a symlink/TOCTOU attack), or race to read/clobber the
+# predictable file. Secure temp creation lets the OS pick an UNPREDICTABLE name and
+# create the file atomically with restrictive (0600) permissions.
+#
+# DETECTOR (ast-grep): nominates a string literal that is a hardcoded absolute temp
+# path (begins "/tmp/") — the candidate-tier syntactic signal of a predictable temp
+# location. ast-grep cannot prove the path is used insecurely; the species is
+# scoped to that smell and the fix + review judge the use (the fixture writes the
+# path directly with os.WriteFile). After the fix the hardcoded /tmp literal is
+# gone, so detector-clears matches zero.
+#
+# FIX (llm): switching to os.CreateTemp is not a literal swap — CreateTemp returns
+# an OPEN FILE HANDLE and an error (not a path string), so the surrounding write
+# logic changes (write through the handle, defer Close, return f.Name()). That
+# localized rewrite is a judgement an llm proposes and a human reviews. The recorded
+# fixer stands in for a live model in CI.
+#
+# VERIFY: compile (the os.CreateTemp rewrite must build, incl. the new handle/error
+# flow) + tests:affected (the affected test still passes against the patched scratch
+# tree — a temp file is still created and written) + detector-clears (no hardcoded
+# /tmp literal remains). Propose-only (auto_apply=false): the secure temp API and
+# the right perms/cleanup are review judgements.
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+[verify]
+checks = ["compile", "tests:affected", "detector-clears"]

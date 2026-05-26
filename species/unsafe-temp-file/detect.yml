@@ -1,0 +1,31 @@
+# Detector rule for the unsafe-temp-file species (LLM-assisted, ADR-0002 /
+# ADR-0004). SECURITY-stage (Sprint 021 P6) — predictable temp-file handling.
+#
+# Go interpretation: a HARDCODED absolute temp path (a string literal beginning
+# "/tmp/") names a PREDICTABLE location in a world-writable directory. An attacker
+# with local access can pre-create that path as a symlink (redirecting the
+# program's write — a symlink/TOCTOU attack) or race to read or clobber the file.
+# Secure temp handling instead lets the OS pick an UNPREDICTABLE name and create
+# the file atomically with restrictive permissions (os.CreateTemp / os.MkdirTemp).
+# This rule NOMINATES a string literal whose value starts with "/tmp/" — the
+# syntactic signal of a hardcoded, predictable temp path.
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: ast-grep cannot prove
+# the literal is used to create a temp file insecurely — it structurally nominates
+# the hardcoded-/tmp-path smell. The verify gate confirms the specific finding: the
+# llm fix switches to os.CreateTemp (an OS-chosen unpredictable name, 0600 perms,
+# an open handle), then compile + tests:affected + detector-clears prove the rewrite
+# builds, keeps the affected test green, and leaves no hardcoded "/tmp/..." literal
+# behind (so this rule matches zero post-fix).
+#
+# The `regex` constraint on the string-literal value anchors the match to the /tmp
+# prefix (matching the literal, not every string). severity is `warning` so
+# `ast-grep scan` exits 0 on a match. auto_apply is false: the secure temp API and
+# the correct perms/cleanup are review judgements, so the fix is always staged.
+id: unsafe-temp-file
+language: go
+severity: warning
+message: 'hardcoded predictable temp path ("/tmp/...") — a symlink/TOCTOU and clobber risk; use os.CreateTemp so the OS picks an unpredictable name with safe (0600) permissions'
+rule:
+  kind: interpreted_string_literal
+  regex: '^"/tmp/'

@@ -306,6 +306,58 @@ func cases() []fixture.Case {
 			GoldenPath:    filepath.Join("testdata", "duplicate-ci-step", "fix.golden"),
 			RequiredTools: []string{"python3"},
 		},
+		{
+			// hardcoded-secret is the Sprint 021 P6 SECURITY-stage SIGNATURE species:
+			// remediation, not just detection. The command detector (detect.sh) flags
+			// a hardcoded AWS access key id (the official AKIAIOSFODNN7EXAMPLE FAKE)
+			// assigned in config.go; the recorded LLM fix is MULTI-FILE — it replaces
+			// the literal with os.Getenv("AWS_ACCESS_KEY_ID") (adding `import "os"`)
+			// AND records the variable in .env.example. The verifier gate is the
+			// remediation proof: compile (the rewrite builds) + command:scan.sh (a
+			// SECRET-SCANNER that re-runs over the post-fix scratch tree and exits
+			// non-zero if ANY secret remains — it CLEARS here) + detector-clears (the
+			// species' own detector matches zero). Propose-only (auto_apply=false). The
+			// fixture contains ONLY an obvious fake; the scanner is a hermetic stub, so
+			// CI needs no installed scanner.
+			Name:       "hardcoded-secret",
+			SpeciesDir: filepath.Join(speciesRoot, "hardcoded-secret"),
+			RepoDir:    filepath.Join("testdata", "hardcoded-secret", "repo"),
+			GoldenPath: filepath.Join("testdata", "hardcoded-secret", "fix.golden"),
+			Fixer: fixture.RecordedFixerMulti(
+				engine.FileDiff{Path: ".env.example", Patch: hardcodedSecretEnvPatch},
+				engine.FileDiff{Path: "config.go", Patch: hardcodedSecretConfigPatch},
+			),
+		},
+		{
+			// insecure-random is a Sprint 021 P6 SECURITY-stage species: a security-
+			// sensitive value (a session token) generated with math/rand is predictable.
+			// The ast-grep detector nominates a call to rand.Intn/Int63/… inside a
+			// security context; the recorded fix replaces the weak RNG with crypto/rand
+			// (rand.Read over a crypto-strong byte buffer) so the value is
+			// unpredictable. After the fix no math/rand call remains, so detector-clears
+			// matches zero; compile + tests:affected confirm the token is still produced
+			// and the right length. Propose-only (auto_apply=false).
+			Name:       "insecure-random",
+			SpeciesDir: filepath.Join(speciesRoot, "insecure-random"),
+			RepoDir:    filepath.Join("testdata", "insecure-random", "repo"),
+			GoldenPath: filepath.Join("testdata", "insecure-random", "fix.golden"),
+			Fixer:      fixture.RecordedFixer(engine.FileDiff{Path: "repo.go", Patch: insecureRandomPatch}),
+		},
+		{
+			// unsafe-temp-file is a Sprint 021 P6 SECURITY-stage species: a temp file
+			// written to a PREDICTABLE path under /tmp is a symlink/race/clobber risk.
+			// The ast-grep detector nominates the hardcoded "/tmp/..." path argument;
+			// the recorded fix switches to os.CreateTemp (the OS picks an unpredictable
+			// name with 0600 perms and returns an open handle). After the fix no
+			// hardcoded /tmp literal remains, so detector-clears matches zero; compile +
+			// tests:affected confirm a temp file is still created and written.
+			// Propose-only (auto_apply=false).
+			Name:       "unsafe-temp-file",
+			SpeciesDir: filepath.Join(speciesRoot, "unsafe-temp-file"),
+			RepoDir:    filepath.Join("testdata", "unsafe-temp-file", "repo"),
+			GoldenPath: filepath.Join("testdata", "unsafe-temp-file", "fix.golden"),
+			Fixer:      fixture.RecordedFixer(engine.FileDiff{Path: "repo.go", Patch: unsafeTempFilePatch}),
+		},
 	}
 }
 
@@ -642,6 +694,93 @@ const aiSlopPatch = "--- a/repo.go\n" +
 	"-\tresult := a + b\n" +
 	"-\treturn result\n" +
 	"+\treturn a + b\n"
+
+// hardcodedSecretConfigPatch (Sprint 021 P6 security) is the SOURCE half of the
+// multi-file hardcoded-secret remediation: it removes the hardcoded AWS access
+// key literal and reads the value from the AWS_ACCESS_KEY_ID environment variable
+// instead, adding `import "os"`. After the fix no secret literal remains in
+// config.go, so BOTH the command secret-scanner gate and detector-clears find
+// nothing. Two hunks: insert the os import after the package clause, then rewrite
+// the assignment.
+const hardcodedSecretConfigPatch = `--- a/config.go
++++ b/config.go
+@@ -11,1 +11,3 @@
+ package hardcodedsecret
++
++import "os"
+@@ -15,1 +17,1 @@
+-	apiKey := "AKIAIOSFODNN7EXAMPLE"
++	apiKey := os.Getenv("AWS_ACCESS_KEY_ID")
+`
+
+// hardcodedSecretEnvPatch (Sprint 021 P6 security) is the CONFIG-EXAMPLE half of
+// the remediation: it records the new variable in .env.example as NAME ONLY (no
+// value), so deployment knows to supply AWS_ACCESS_KEY_ID at runtime while the
+// example file never carries a real secret. One hunk appends the variable after
+// the existing APP_NAME line.
+const hardcodedSecretEnvPatch = `--- a/.env.example
++++ b/.env.example
+@@ -5,1 +5,2 @@
+ APP_NAME=hardcodedsecret-fixture
++AWS_ACCESS_KEY_ID=
+`
+
+// insecureRandomPatch (Sprint 021 P6 security) replaces the predictable math/rand
+// token generation with crypto/rand: it swaps the "math/rand" import for
+// "crypto/rand" + "encoding/hex" and rewrites the body to read crypto-strong
+// random bytes (rand.Read) and hex-encode them. After the fix no math/rand call
+// remains, so detector-clears matches zero; compile + tests:affected confirm the
+// token is still the expected length. Two hunks: the import block and the body.
+const insecureRandomPatch = `--- a/repo.go
++++ b/repo.go
+@@ -7,4 +7,4 @@
+ import (
+-	"fmt"
+-	"math/rand"
++	"crypto/rand"
++	"encoding/hex"
+ )
+@@ -13,6 +13,8 @@
+ func SessionToken() string {
+ 	b := make([]byte, 16)
+-	for i := range b {
+-		b[i] = byte(rand.Intn(256))
+-	}
+-	return fmt.Sprintf("%x", b)
++	if _, err := rand.Read(b); err != nil {
++		panic(err)
++	}
++	return hex.EncodeToString(b)
+ }
+`
+
+// unsafeTempFilePatch (Sprint 021 P6 security) replaces the predictable
+// "/tmp/app-cache.tmp" path with os.CreateTemp, which picks an unpredictable name
+// with 0600 perms and returns an open handle (closing the symlink/race/clobber
+// window). It swaps the import set ("os" gains CreateTemp use; the hardcoded path
+// constant is dropped) and rewrites the body. After the fix no hardcoded /tmp
+// literal remains, so detector-clears matches zero; compile + tests:affected
+// confirm a temp file is still created and written. Two hunks: import + body.
+const unsafeTempFilePatch = `--- a/repo.go
++++ b/repo.go
+@@ -13,7 +13,11 @@
+ func WriteCache(data []byte) (string, error) {
+-	path := "/tmp/app-cache.tmp"
+-	if err := os.WriteFile(path, data, 0644); err != nil {
+-		return "", err
+-	}
+-	return path, nil
++	f, err := os.CreateTemp("", "app-cache-*.tmp")
++	if err != nil {
++		return "", err
++	}
++	defer f.Close()
++	if _, err := f.Write(data); err != nil {
++		return "", err
++	}
++	return f.Name(), nil
+ }
+`
 
 // TestTodoExpiredReportOnly drives the Sprint 019 report-only species through the
 // detect-only harness: it asserts the species produces findings (the three seeded

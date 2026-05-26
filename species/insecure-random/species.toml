@@ -1,0 +1,43 @@
+name        = "insecure-random"
+description = "Detects a weak (non-cryptographic) RNG used to generate a security-sensitive value — a token, id, key, or salt built with math/rand. The fix replaces it with a crypto-safe RNG (crypto/rand). security-stage, propose-only; see detect.yml + fix.md"
+severity    = "high"
+languages   = ["go"]
+auto_apply  = false
+enabled     = true
+
+# SECURITY species (Sprint 021 P6 — Security Hygiene). math/rand is a fast,
+# DETERMINISTIC pseudo-random generator: its output is predictable from the seed,
+# so using it for a security value (session token, password-reset id, API key,
+# salt, nonce) lets an attacker who can observe or guess the seed reproduce the
+# value. Security-sensitive randomness must come from a CRYPTO-strong source
+# (crypto/rand, which reads the OS CSPRNG).
+#
+# DETECTOR (ast-grep): nominates a call to a math/rand generator function
+# (rand.Intn / Int / Int63 / Int31 / Uint32 / Uint64 / Float64) — the candidate-
+# tier syntactic signal that a pseudo-random value is being produced. ast-grep
+# cannot prove the value is security-sensitive; the species is scoped to that smell
+# and the fix + review judge the context (the fixture's call sits inside a
+# SessionToken generator). After the fix the math/rand call is gone, so
+# detector-clears matches zero.
+#
+# FIX (llm): swapping math/rand for crypto/rand is not a one-token rename — the
+# API differs (crypto/rand.Read fills a byte slice and returns an error that must
+# be handled), so the rewrite is a localized judgement an llm proposes and a human
+# reviews. The recorded fixer stands in for a live model in CI.
+#
+# VERIFY: compile (the crypto/rand rewrite must build, incl. the new error path) +
+# tests:affected (the affected test still passes against the patched scratch tree —
+# the token is still produced and the right length) + detector-clears (no math/rand
+# generator call remains). Propose-only (auto_apply=false): which RNG is correct,
+# and whether a given value is truly security-sensitive, is a review judgement.
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+[verify]
+checks = ["compile", "tests:affected", "detector-clears"]

@@ -1,0 +1,19 @@
+--- a/repo.go
++++ b/repo.go
+@@ -13,7 +13,11 @@
+ func WriteCache(data []byte) (string, error) {
+-	path := "/tmp/app-cache.tmp"
+-	if err := os.WriteFile(path, data, 0644); err != nil {
+-		return "", err
+-	}
+-	return path, nil
++	f, err := os.CreateTemp("", "app-cache-*.tmp")
++	if err != nil {
++		return "", err
++	}
++	defer f.Close()
++	if _, err := f.Write(data); err != nil {
++		return "", err
++	}
++	return f.Name(), nil
+ }

@@ -58,6 +58,21 @@
 // propose-only; unused-dependency notes that high-confidence ecosystems could
 // graduate to auto_apply later. Their fixtures are HERMETIC/offline (isolated
 // zero-dep Go module; pure-stdlib parse scripts) — no network install.
+//
+// The Sprint 021 P6 security-hygiene wave adds three SECURITY-stage, propose-only
+// (auto_apply=false) species whose edge is the VERIFIED REMEDIATION diff, not
+// detection: hardcoded-secret (SIGNATURE — a command detector flags a high-entropy
+// literal or known token shape, e.g. an AWS AKIA… key, in source; the llm fix
+// removes the literal, reads it from os.Getenv, and records the variable in
+// .env.example; gated by compile + a `command:` SECRET-SCANNER-CLEARS verifier
+// that re-runs over the post-fix tree and must find NO secret — the remediation
+// proof — plus detector-clears), insecure-random (an ast-grep detector flags
+// math/rand used for a security value; the llm fix swaps in crypto/rand; gated by
+// compile + tests:affected + detector-clears), and unsafe-temp-file (an ast-grep
+// detector flags a predictable /tmp path; the llm fix switches to os.CreateTemp
+// with OS-chosen unpredictable name + 0600 perms; same gate). Fixtures use ONLY
+// obvious FAKE placeholders (the AWS-docs AKIAIOSFODNN7EXAMPLE) and a hermetic,
+// self-contained scanner stub — CI depends on no installed secret scanner.
 package builtins
 
 import "embed"
@@ -68,7 +83,7 @@ import "embed"
 // embed.FS paths are always slash-separated and rooted at this directory, so the
 // resolver sees "unused-import/species.toml", etc.
 //
-//go:embed unused-import dead-code unused-variable redundant-conversion unreachable-code empty-block duplicate-condition redundant-nil-check ineffective-assignment formatter-drift import-sort lint-autofix trailing-debug-code n+1-query missing-await nil-deref ai-slop ignored-error unchecked-type-assertion resource-leak missing-context-timeout unsafe-concurrency sql-string-concat deep-nesting long-function magic-number duplicate-code-small todo-expired unused-dependency dead-config duplicate-ci-step stale-dependency-pin
+//go:embed unused-import dead-code unused-variable redundant-conversion unreachable-code empty-block duplicate-condition redundant-nil-check ineffective-assignment formatter-drift import-sort lint-autofix trailing-debug-code n+1-query missing-await nil-deref ai-slop ignored-error unchecked-type-assertion resource-leak missing-context-timeout unsafe-concurrency sql-string-concat deep-nesting long-function magic-number duplicate-code-small todo-expired unused-dependency dead-config duplicate-ci-step stale-dependency-pin hardcoded-secret insecure-random unsafe-temp-file
 var files embed.FS
 
 // FS returns the embedded built-in species tree as a read-only fs.FS-compatible

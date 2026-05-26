@@ -1,0 +1,21 @@
+--- a/repo.go
++++ b/repo.go
+@@ -7,4 +7,4 @@
+ import (
+-	"fmt"
+-	"math/rand"
++	"crypto/rand"
++	"encoding/hex"
+ )
+@@ -13,6 +13,8 @@
+ func SessionToken() string {
+ 	b := make([]byte, 16)
+-	for i := range b {
+-		b[i] = byte(rand.Intn(256))
+-	}
+-	return fmt.Sprintf("%x", b)
++	if _, err := rand.Read(b); err != nil {
++		panic(err)
++	}
++	return hex.EncodeToString(b)
+ }

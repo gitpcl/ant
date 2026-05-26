@@ -1,0 +1,14 @@
+--- a/.env.example
++++ b/.env.example
+@@ -5,1 +5,2 @@
+ APP_NAME=hardcodedsecret-fixture
++AWS_ACCESS_KEY_ID=
+--- a/config.go
++++ b/config.go
+@@ -11,1 +11,3 @@
+ package hardcodedsecret
++
++import "os"
+@@ -15,1 +17,1 @@
+-	apiKey := "AKIAIOSFODNN7EXAMPLE"
++	apiKey := os.Getenv("AWS_ACCESS_KEY_ID")

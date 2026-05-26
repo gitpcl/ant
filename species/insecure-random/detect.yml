@@ -1,0 +1,44 @@
+# Detector rule for the insecure-random species (LLM-assisted, ADR-0002 /
+# ADR-0004). SECURITY-stage (Sprint 021 P6) — weak RNG for a security value.
+#
+# Go interpretation: a value produced by the math/rand package is PREDICTABLE
+# (math/rand is a deterministic PRNG seeded from a known/guessable source). Using
+# it to generate a security-sensitive value — a session token, password-reset id,
+# API key, salt, or nonce — means an attacker who can observe or guess the seed can
+# reproduce the value. Security randomness must come from crypto/rand (the OS
+# CSPRNG). This rule NOMINATES a call to a math/rand generator function:
+# rand.Intn / rand.Int / rand.Int63 / rand.Int31 / rand.Uint32 / rand.Uint64 /
+# rand.Float64 — the syntactic signal that a pseudo-random value is being built.
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: ast-grep cannot prove
+# the package imported as `rand` is math/rand (vs crypto/rand) or that the value is
+# security-sensitive — it structurally nominates the math/rand-generator-call
+# smell. The verify gate confirms the specific finding: the llm fix replaces the
+# weak RNG with crypto/rand (rand.Read into a byte buffer + error handling), then
+# compile + tests:affected + detector-clears prove the rewrite builds, keeps the
+# affected test green, and leaves no math/rand generator call behind (crypto/rand
+# exposes Read, not Intn/Int63/…, so this rule matches zero post-fix).
+#
+# IMPLEMENTATION NOTE (ast-grep 0.42.3): a BARE call snippet like `rand.Intn($A)`
+# is parsed ambiguously as a type-conversion, not a call (the Sprint-018 gotcha),
+# so each generator is pinned with an enclosing-statement `context` and a
+# `selector: call_expression`, which anchors the match to the call itself.
+#
+# severity is `warning` so `ast-grep scan` exits 0 on a match (the adapter treats a
+# non-zero exit as a run error). auto_apply is false: weak randomness in a security
+# context is a vulnerability and the correct crypto API + whether the value is truly
+# security-sensitive are review judgements, so the fix is always staged for review.
+id: insecure-random
+language: go
+severity: warning
+message: 'security-sensitive value generated with math/rand (a predictable PRNG) — use crypto/rand so the value cannot be reproduced by an attacker'
+rule:
+  kind: call_expression
+  any:
+    - pattern: { context: 'x = rand.Intn($A)', selector: call_expression }
+    - pattern: { context: 'x = rand.Int()', selector: call_expression }
+    - pattern: { context: 'x = rand.Int63()', selector: call_expression }
+    - pattern: { context: 'x = rand.Int31()', selector: call_expression }
+    - pattern: { context: 'x = rand.Uint32()', selector: call_expression }
+    - pattern: { context: 'x = rand.Uint64()', selector: call_expression }
+    - pattern: { context: 'x = rand.Float64()', selector: call_expression }

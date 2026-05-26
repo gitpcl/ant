@@ -58,6 +58,16 @@ var adr0002 = map[string]struct {
 	"stale-dependency-pin": {FixKindDeterministic, false, true},
 	"dead-config":          {FixKindDeterministic, false, true},
 	"duplicate-ci-step":    {FixKindDeterministic, false, true},
+
+	// Sprint 021 P6 security-hygiene: three SECURITY-stage, propose-only
+	// (auto_apply=false) species whose value is the verified remediation. All
+	// ship enabled, propose-only. hardcoded-secret has an llm fix (env-var
+	// rewrite + .env.example), gated by compile + a command: secret-scanner-clears
+	// verifier + detector-clears; insecure-random and unsafe-temp-file have llm
+	// fixes gated by compile + tests:affected + detector-clears.
+	"hardcoded-secret": {FixKindLLM, false, true},
+	"insecure-random":  {FixKindLLM, false, true},
+	"unsafe-temp-file": {FixKindLLM, false, true},
 }
 
 // TestEmbed_BuiltinsDiscoverableNoDisk is the core feature-3 assertion: the

@@ -1,0 +1,48 @@
+name        = "hardcoded-secret"
+description = "Detects a likely hardcoded secret/token/key (high-entropy literal or a known token shape) assigned in source; the fix removes the literal, reads it from an environment variable, and records the variable in .env.example. security-stage, propose-only; see detect.sh + fix.md"
+severity    = "high"
+languages   = ["go"]
+auto_apply  = false
+enabled     = true
+
+# SECURITY species (Sprint 021 P6 — Security Hygiene). Ant's edge here is
+# REMEDIATION, not detection: existing scanners already FIND hardcoded secrets;
+# the differentiator is a verified env-var fix proven by re-running a secret
+# scanner that must CLEAR after the change.
+#
+# DETECTOR (command, not ast-grep): a hardcoded-secret is recognized by the VALUE
+# shape — a known token prefix (AWS AKIA…, GitHub ghp_…, Slack xoxb-…, a private-
+# key header) OR a long high-ENTROPY string assigned to a secret-named identifier
+# (key/token/secret/password). Computing Shannon entropy over a literal and
+# matching token regexes is value-level analysis ast-grep's structural matcher
+# cannot express, so the detector is the Sprint 020 `command` escape hatch: a
+# POSIX script that scans source literals and emits a finding per likely secret.
+#
+# FIX (llm): removing a secret is not a mechanical delete — the literal must be
+# replaced with an environment-variable read (os.Getenv) AND the variable recorded
+# in .env.example so the value is supplied at runtime, a multi-file rewrite that is
+# a review judgement. The recorded fixer stands in for a live model in CI.
+#
+# VERIFY: compile (the env-var rewrite must still build) + a command: SECRET-
+# SCANNER-CLEARS gate (re-runs the scanner over the post-fix scratch tree; it must
+# find ZERO secrets — this is the remediation proof, not just detection) +
+# detector-clears (the species' own detector no longer matches). Propose-only
+# (auto_apply=false): rotating/relocating a secret is a security change a human
+# must confirm, and the leaked value must still be rotated out of band.
+
+[detector]
+kind        = "command"
+script      = "detect.sh"
+interpreter = "sh"
+
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+# verify gate: compile (the rewrite builds) + the SECRET-SCANNER-CLEARS gate
+# (scan.sh re-runs the scanner over the post-fix scratch copy and exits non-zero
+# if ANY secret remains — the remediation proof) + detector-clears (the owning
+# detector matches zero post-fix). diff-bounded is prepended by the engine.
+[verify]
+checks      = ["compile", "command:scan.sh", "detector-clears"]
+interpreter = "sh"
