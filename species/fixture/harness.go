@@ -39,6 +39,12 @@ import (
 // const so the skip-probe and the adapter agree on one name.
 const astGrepBinary = "ast-grep"
 
+// PlaceholderFile re-exports fix.PlaceholderFile so orchestration fixtures
+// declare the tool-runner's {file} placeholder via the harness package they
+// already import, without also importing the fix package. The tool-runner
+// substitutes it with the scratch copy's path at fix time.
+const PlaceholderFile = fix.PlaceholderFile
+
 // FixerFactory builds the engine.Fixer the harness drives a species' findings
 // through. It receives the loaded manifest so it can branch on the fix kind /
 // transform (a deterministic species reads m.Fix.Transform; an LLM species would
@@ -110,6 +116,14 @@ func (f *recordedFixer) Fix(_ context.Context, _ engine.FixTask) (engine.Propose
 // GoldenPath is the committed patch the produced diff must match. Fixer, when
 // nil, defaults to DeterministicFixer — an LLM species sets it to a recorded
 // fixer factory. Limits, when zero, defaults to verify.DefaultLimits().
+//
+// ToolCommand/ToolArgs OVERRIDE the manifest's tool command for the
+// orchestration species (Sprint 017). The shipped species.toml names the REAL
+// ecosystem tool (gofmt, prettier, ruff, eslint), but CI must not depend on it
+// being installed, so a fixture points the tool-runner fix AND the
+// formatter-idempotence verifier at a FAKE formatter on PATH instead. When set,
+// the harness builds fix.NewTool and verify.NewFormatterIdempotence from these
+// overrides; the manifest's declared command is still validated by the loader.
 type Case struct {
 	Name       string
 	SpeciesDir string
@@ -117,6 +131,13 @@ type Case struct {
 	GoldenPath string
 	Fixer      FixerFactory
 	Limits     verify.Limits
+
+	// ToolCommand, when non-empty, overrides the [fix].command / [verify.tool].command
+	// with a fake formatter for determinism (the orchestration species). ToolArgs
+	// overrides the args ("{file}" is substituted by the tool-runner / idempotence
+	// verifier exactly as in production).
+	ToolCommand string
+	ToolArgs    []string
 }
 
 // RunCase executes the full detect → fix → verify pipeline for one species over
@@ -230,11 +251,20 @@ func buildDetector(t *testing.T, reg *species.Registry, m species.Manifest, spec
 	return det
 }
 
-// resolveFixer returns the case's Fixer (defaulting to DeterministicFixer) built
-// for the manifest. It is the seam that lets the same harness drive a real
-// deterministic fix or a recorded LLM fix.
+// resolveFixer returns the case's Fixer built for the manifest. A tool species
+// (ToolCommand set) builds fix.NewTool against the FAKE formatter override so the
+// harness exercises the genuine tool-runner read→exec→diff path without a real
+// formatter on PATH (Sprint 017). Otherwise it uses the case's Fixer (defaulting
+// to DeterministicFixer), the seam that also drives a recorded LLM fix.
 func resolveFixer(t *testing.T, c Case, m species.Manifest) engine.Fixer {
 	t.Helper()
+	if c.ToolCommand != "" {
+		fixer, err := fix.NewTool(fix.ToolConfig{Command: c.ToolCommand, Args: c.ToolArgs})
+		if err != nil {
+			t.Fatalf("%s: build tool fixer (fake %q): %v", c.Name, c.ToolCommand, err)
+		}
+		return fixer
+	}
 	factory := c.Fixer
 	if factory == nil {
 		factory = DeterministicFixer
@@ -270,7 +300,7 @@ func runFix(t *testing.T, c Case, fixer engine.Fixer, f engine.Finding) engine.P
 // the patched scratch tree.
 func runVerify(t *testing.T, c Case, reg *species.Registry, m species.Manifest, detector engine.Detector, scope engine.Scope, limits verify.Limits, f engine.Finding, diff engine.ProposedDiff) {
 	t.Helper()
-	gate := buildGate(t, reg, m, detector, limits, f)
+	gate := buildGate(t, c, reg, m, detector, limits, f)
 	res := gate.Verify(context.Background(), diff, scope)
 	if !res.Passed {
 		t.Fatalf("%s: verifier gate REJECTED the fix for %s:%d (the fixture must verify end-to-end): %s",
@@ -284,7 +314,7 @@ func runVerify(t *testing.T, c Case, reg *species.Registry, m species.Manifest, 
 // check (the gate that makes propose-only LLM fixes safe — ADR-0002) are wired
 // here against the REAL production verifiers, so an LLM species fixture proves the
 // genuine detect→fix→verify path, not a stub gate.
-func buildGate(t *testing.T, reg *species.Registry, m species.Manifest, detector engine.Detector, limits verify.Limits, f engine.Finding) engine.Verifier {
+func buildGate(t *testing.T, c Case, reg *species.Registry, m species.Manifest, detector engine.Detector, limits verify.Limits, f engine.Finding) engine.Verifier {
 	t.Helper()
 	rest := make([]engine.Verifier, 0, len(m.Verify.Checks))
 	for _, check := range m.Verify.Checks {
@@ -293,6 +323,16 @@ func buildGate(t *testing.T, reg *species.Registry, m species.Manifest, detector
 			rest = append(rest, verify.NewCompile(nil)) // real `go build ./...`
 		case verify.CheckDetectorClears:
 			rest = append(rest, verify.NewDetectorClears(detector, f))
+		case verify.CheckFormatterIdempotence:
+			// Re-run the formatter over the post-fix tree and assert no further
+			// changes (Sprint 017). A tool fixture points this at the SAME fake
+			// formatter the fix used (Case.ToolCommand) so a stable fake converges;
+			// otherwise it uses the manifest's [verify.tool] (real ecosystem tool).
+			cmd, args := m.Verify.Tool.Command, m.Verify.Tool.Args
+			if c.ToolCommand != "" {
+				cmd, args = c.ToolCommand, c.ToolArgs
+			}
+			rest = append(rest, verify.NewFormatterIdempotence(verify.ToolSpec{Command: cmd, Args: args}, nil))
 		case verify.CheckTestsAffected:
 			// The REAL tests:affected verifier (Sprint 010, TECHSPEC §5.3.1). A nil
 			// cache omits the coverage-map strategy, so it degrades through

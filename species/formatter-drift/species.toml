@@ -1,0 +1,35 @@
+name        = "formatter-drift"
+description = "Runs the project formatter on drifted files and stages the reformatted result"
+severity    = "low"
+languages   = ["go", "ts"]
+auto_apply  = true
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# Tool-runner fix (Sprint 017): exec the project formatter on a scratch copy and
+# capture the reformatted file as the diff. The command is DECLARATIVE — gofmt
+# here for Go; a TS/Py/Rust variant of this species would name prettier / ruff
+# format / rustfmt. {file} is substituted with the scratch copy's path. No tool is
+# special-cased in the engine.
+[fix]
+kind         = "tool"
+command      = "gofmt"
+args         = ["-w", "{file}"]
+timeout      = "30s"
+version_args = []
+
+# formatter-idempotence re-runs the SAME formatter over the post-fix tree and
+# asserts no further changes (a stable formatter converges; an oscillating one
+# fails — a trust signal, not a loop). compile rebuilds the patched tree so a
+# reformat that somehow broke the build is skipped. detector-clears is
+# deliberately OMITTED: a formatter normalizes layout, it does not remove the
+# syntactic anchor the detector matched, so re-detect is not the right gate here.
+[verify]
+checks = ["formatter-idempotence", "compile"]
+
+[verify.tool]
+command = "gofmt"
+args    = ["-l", "{file}"]

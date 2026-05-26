@@ -1,0 +1,15 @@
+--- a/repo.go
++++ b/repo.go
+@@ -1,6 +1,6 @@
+-package lintautofix
+-
+-//ant:lint-autofix this function has an auto-fixable lint finding (trailing space)
+-func Add(a int, b int) int {
+-	return a + b   
+-}
++package lintautofix
++
++//ant:lint-autofix this function has an auto-fixable lint finding (trailing space)
++func Add(a int, b int) int {
++	return a + b
++}

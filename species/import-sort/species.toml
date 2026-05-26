@@ -1,0 +1,31 @@
+name        = "import-sort"
+description = "Organizes and sorts imports via the language import organizer (goimports/isort/prettier)"
+severity    = "low"
+languages   = ["go", "ts"]
+auto_apply  = true
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# Tool-runner fix (Sprint 017): exec the language import organizer on a scratch
+# copy and capture the sorted result. Declarative command — goimports here for
+# Go; a TS/Py variant names prettier (import order plugin) / isort / ruff. {file}
+# is the scratch path the runner substitutes.
+[fix]
+kind    = "tool"
+command = "goimports"
+args    = ["-w", "{file}"]
+timeout = "30s"
+
+# Imports sorting is low-risk visible cleanup: formatter-idempotence proves the
+# organizer converges (a non-deterministic one fails), and compile rebuilds the
+# patched tree (a reorder that broke the build is skipped). detector-clears is
+# omitted — sorting normalizes order, it does not remove the anchor.
+[verify]
+checks = ["formatter-idempotence", "compile"]
+
+[verify.tool]
+command = "goimports"
+args    = ["-w", "{file}"]

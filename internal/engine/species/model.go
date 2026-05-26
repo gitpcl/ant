@@ -22,6 +22,12 @@ const (
 	FixKindDeterministic = "deterministic"
 	// FixKindLLM selects an LLM-assisted fixer that requires a prompt.
 	FixKindLLM = "llm"
+	// FixKindTool selects the tool-runner fixer: it execs a manifest-declared
+	// external formatter/autofixer (gofmt, prettier, ruff, eslint, clippy) on a
+	// scratch copy and captures the diff (Sprint 017, TECHSPEC §10). The command +
+	// args are declarative in [fix] (Command/Args), so no tool is special-cased in
+	// the engine.
+	FixKindTool = "tool"
 )
 
 // Manifest is the decoded species.toml document (TECHSPEC §6.2). It is the
@@ -70,19 +76,47 @@ type Detect struct {
 
 // Fix is the [fix] section: the fix strategy and its parameters (TECHSPEC §6.2).
 // An llm fix requires Prompt; a deterministic fix names a Transform and does
-// NOT require a prompt.
+// NOT require a prompt; a tool fix declares a Command (+ optional Args/Timeout/
+// VersionArgs) to exec.
 type Fix struct {
-	Kind      string `toml:"kind"`      // llm | deterministic
+	Kind      string `toml:"kind"`      // llm | deterministic | tool
 	Prompt    string `toml:"prompt"`    // prompt file — required for kind=llm
 	Transform string `toml:"transform"` // transform name — for kind=deterministic
+
+	// Command/Args/Timeout/VersionArgs declare the external command the
+	// tool-runner execs (kind=tool, Sprint 017). The command is resolved from PATH
+	// at fix time; Args may contain the "{file}" placeholder the runner
+	// substitutes with the scratch copy's path (an Args list with no placeholder
+	// appends the file). Timeout is a Go duration string ("30s"); empty uses the
+	// engine default. VersionArgs (e.g. ["--version"]) is an optional best-effort
+	// version probe for provenance. Required for kind=tool, ignored otherwise.
+	Command     string   `toml:"command"`
+	Args        []string `toml:"args"`
+	Timeout     string   `toml:"timeout"`
+	VersionArgs []string `toml:"version_args"`
 }
 
 // Verify is the [verify] section: the ordered list of verifier checks
 // (TECHSPEC §6.2). Entries are built-in kinds (compile, tests:affected,
-// detector-clears, diff-bounded, …) or a command escape hatch
-// ("command:verify.sh").
+// detector-clears, diff-bounded, formatter-idempotence, …) or a command escape
+// hatch ("command:verify.sh").
+//
+// Tool declares the formatter the formatter-idempotence check re-runs ([verify.tool]
+// in the manifest). It mirrors the tool-runner's command/args so a species names
+// the formatter once for the fix and once for the idempotence gate; empty unless
+// the checks include formatter-idempotence.
 type Verify struct {
 	Checks []string `toml:"checks"`
+	Tool   ToolRef  `toml:"tool"`
+}
+
+// ToolRef is the [verify.tool] section: the command + args the
+// formatter-idempotence verifier re-runs over the post-fix tree (Sprint 017). It
+// is the same declarative shape as the [fix] tool command, kept separate so the
+// idempotence gate is wired independently of the fixer that produced the diff.
+type ToolRef struct {
+	Command string   `toml:"command"`
+	Args    []string `toml:"args"`
 }
 
 // EffectiveAutoApply reports the manifest's author-suggested auto_apply default,

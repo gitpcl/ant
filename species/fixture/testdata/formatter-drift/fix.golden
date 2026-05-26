@@ -1,0 +1,15 @@
+--- a/repo.go
++++ b/repo.go
+@@ -1,6 +1,6 @@
+-package formatterdrift
+-
+-//ant:formatter-drift this file has layout drift the formatter should normalize
+-func Total(a int, b int) int {   
+-	return a + b  
+-}
++package formatterdrift
++
++//ant:formatter-drift this file has layout drift the formatter should normalize
++func Total(a int, b int) int {
++	return a + b
++}

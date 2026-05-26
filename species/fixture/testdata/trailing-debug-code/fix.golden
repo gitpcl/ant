@@ -1,0 +1,4 @@
+--- a/repo.go
++++ b/repo.go
+@@ -10,1 +10,0 @@
+-	fmt.Println("DEBUG: Greet called with", name)

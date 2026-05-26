@@ -151,6 +151,14 @@ func validate(fsys fs.FS, dir string, m Manifest, reg *Registry) error {
 				return bad("[fix].prompt %q: %v", m.Fix.Prompt, err)
 			}
 		}
+	case FixKindTool:
+		// A tool fix MUST declare the command it execs; args/timeout are optional
+		// (Sprint 017). The command is resolved from PATH at fix time, so it is not
+		// checked for existence here — a missing tool is a clean per-ant skip, not a
+		// manifest error (CI must not require the formatter to be installed).
+		if m.Fix.Command == "" {
+			return bad("[fix].command is required for kind=%q", FixKindTool)
+		}
 	}
 
 	// --- [verify] ---

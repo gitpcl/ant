@@ -1,0 +1,26 @@
+# Detector rule for the lint-autofix species (tool-runner fix — Sprint 017 P2
+# orchestration wave; auto_apply).
+#
+# ORCHESTRATION species: the linter's own safe autofixer (ruff --fix / eslint
+# --fix / clippy --fix) resolves the findings; Ant wraps it in the staging/review/
+# trust model and gates the result with compile + tests:affected. ast-grep only
+# NOMINATES a file for autofixing — it matches a top-level declaration the author
+# marked with an `//ant:lint-autofix` doc comment (the established marker
+# convention). The wrapped tool decides what is auto-fixable; the engine does not.
+#
+# Trust rests on a STRONGER gate than the format species: compile rebuilds the
+# patched tree and tests:affected runs the affected tests, so an autofix that
+# changed behavior is caught and skipped (TECHSPEC §5.3). detector-clears is not
+# used — re-running ast-grep over a tool-resolved file is the wrong gate.
+id: lint-autofix
+language: go
+severity: info
+message: 'File marked //ant:lint-autofix has auto-fixable lint findings; running the safe autofixer'
+rule:
+  pattern: |
+    func $NAME($$$PARAMS) $RET {
+      $$$BODY
+    }
+  follows:
+    kind: comment
+    regex: 'ant:lint-autofix'

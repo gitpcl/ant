@@ -1,0 +1,27 @@
+# Detector rule for the import-sort species (tool-runner fix — Sprint 017 P2
+# orchestration wave; auto_apply).
+#
+# Like formatter-drift, this is an ORCHESTRATION species: the external import
+# organizer (goimports/isort/prettier) does the work, gated by
+# formatter-idempotence + compile. ast-grep cannot decide "are these imports in
+# canonical order"; it only NOMINATES a file for organizing. The rule matches a Go
+# `import ( ... )` group the author marked with an `//ant:import-sort` doc comment
+# (the established marker convention).
+#
+# After the tool-runner sorts the group, formatter-idempotence re-runs the
+# organizer and requires zero further changes (a non-deterministic organizer
+# FAILS — a trust signal), and compile rebuilds the patched tree. detector-clears
+# is NOT used: sorting reorders lines, it does not remove the marked import group,
+# so re-detect is the wrong gate.
+id: import-sort
+language: go
+severity: info
+message: 'Import group marked //ant:import-sort is not in canonical order; organizing imports'
+rule:
+  pattern: |
+    import (
+      $$$SPECS
+    )
+  follows:
+    kind: comment
+    regex: 'ant:import-sort'

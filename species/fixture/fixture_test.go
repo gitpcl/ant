@@ -81,6 +81,16 @@ func cases() []fixture.Case {
 			GoldenPath: filepath.Join("testdata", "ineffective-assignment", "fix.golden"),
 		},
 		{
+			// trailing-debug-code is PROPOSE-ONLY (auto_apply=false) but its fix is a
+			// deterministic delete-match (remove the fmt.Println debug line), so it
+			// runs through the default DeterministicFixer like the other cleanup
+			// species — no tool override. compile + detector-clears gate it.
+			Name:       "trailing-debug-code",
+			SpeciesDir: filepath.Join(speciesRoot, "trailing-debug-code"),
+			RepoDir:    filepath.Join("testdata", "trailing-debug-code", "repo"),
+			GoldenPath: filepath.Join("testdata", "trailing-debug-code", "fix.golden"),
+		},
+		{
 			Name:       "nil-deref",
 			SpeciesDir: filepath.Join(speciesRoot, "nil-deref"),
 			RepoDir:    filepath.Join("testdata", "nil-deref", "repo"),

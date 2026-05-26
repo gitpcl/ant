@@ -1,0 +1,37 @@
+# Detector rule for the trailing-debug-code species (deterministic delete-match,
+# propose-only — Sprint 017 P2 orchestration wave).
+#
+# Unlike the formatter/linter orchestration species (which wrap an external tool),
+# trailing-debug-code is a localized single-statement smell: an ad-hoc debug print
+# left in the source. ast-grep matches it SYNTACTICALLY — here a top-level
+# `fmt.Println(...)` call statement in Go, the canonical Go debug-output tic
+# (console.log / debugger / print are the JS/Python equivalents a parallel TS/Py
+# rule would match). No marker comment is needed because the call shape IS the
+# smell.
+#
+# The fix is PROPOSE-ONLY (auto_apply=false): a debug line can be intentional
+# logging, so removal is review-gated rather than auto-applied. The deterministic
+# delete-match fix removes the verbatim matched line(s); `compile` rebuilds the
+# patched tree (so removing the line is proven not to break the build — a debug
+# call that was the sole use of an import would fail compile and be skipped), and
+# `detector-clears` re-runs this rule and requires zero matches afterward.
+#
+# The match is the `fmt.Println(...)` call. A bare `fmt.Println($$$)` pattern is
+# AMBIGUOUS in Go's grammar — out of context ast-grep parses it as a
+# type_conversion_expression, not a call — so the pattern is given a `context`
+# (a function-body wrapper) with `selector: call_expression`, which forces
+# tree-sitter to parse it as a call and matches the real one in the file. The
+# match's `lines` capture is the verbatim indented source line, so the
+# deterministic delete-match fix (which patches SourceLines at the match's start
+# line) removes exactly that line.
+id: trailing-debug-code
+language: go
+severity: info
+message: 'Ad-hoc debug output (fmt.Println) left in source; remove or replace with structured logging'
+rule:
+  pattern:
+    context: |
+      func _() {
+        fmt.Println($$$ARGS)
+      }
+    selector: call_expression

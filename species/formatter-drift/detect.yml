@@ -1,0 +1,30 @@
+# Detector rule for the formatter-drift species (tool-runner fix — Sprint 017 P2
+# orchestration wave; auto_apply).
+#
+# This species is an ORCHESTRATION species: the real work is done by an external
+# formatter (gofmt/prettier/ruff format/rustfmt) the tool-runner execs, and the
+# trust gates are formatter-idempotence + compile. ast-grep is a SYNTACTIC matcher
+# (TECHSPEC §2) and cannot itself decide "would the formatter change this file";
+# that is the formatter's job. So the detector's role here is only to NOMINATE a
+# file as a drift candidate — it matches a top-level declaration the author (or an
+# upstream pass) marked with an `//ant:formatter-drift` doc comment, the same
+# marker convention the deterministic cleanup species use.
+#
+# After the tool-runner reformats the whole file, the gate proves the result:
+# formatter-idempotence re-runs the formatter and requires zero further changes
+# (an oscillating formatter FAILS — a trust signal), and compile rebuilds the
+# patched tree. detector-clears is intentionally NOT used: a formatter normalizes
+# layout, it does not remove the marker the detector matched, so re-detect is the
+# wrong gate for a reformat (unlike the delete/rewrite species).
+id: formatter-drift
+language: go
+severity: info
+message: 'File marked //ant:formatter-drift is not in canonical formatter layout; reformatting'
+rule:
+  pattern: |
+    func $NAME($$$PARAMS) $RET {
+      $$$BODY
+    }
+  follows:
+    kind: comment
+    regex: 'ant:formatter-drift'

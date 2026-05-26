@@ -1,0 +1,29 @@
+name        = "lint-autofix"
+description = "Runs the safe/auto-fixable subset of the project linter (ruff --fix / eslint --fix / clippy --fix)"
+severity    = "low"
+languages   = ["go", "ts", "py", "rust"]
+auto_apply  = true
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# Tool-runner fix (Sprint 017): exec the linter's SAFE autofixer on a scratch copy
+# and capture the resolved subset. Declarative command — ruff --fix here as the
+# example; a JS/Rust variant names eslint --fix / cargo clippy --fix. Only the
+# tool's own safe/auto-fixable subset is applied (the engine does not decide what
+# is safe — the wrapped tool does). {file} is the scratch path.
+[fix]
+kind    = "tool"
+command = "ruff"
+args    = ["check", "--fix", "{file}"]
+timeout = "60s"
+
+# auto_apply is justified by a stronger gate than the format species: compile (or
+# typecheck) rebuilds the patched tree AND tests:affected runs the affected tests,
+# so an autofix that changed behavior is caught and skipped. detector-clears is
+# omitted (the linter resolves findings the way it sees fit; re-running ast-grep
+# over the result is not the right gate for a tool-driven fix).
+[verify]
+checks = ["compile", "tests:affected"]

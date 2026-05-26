@@ -1,0 +1,17 @@
+name        = "trailing-debug-code"
+description = "Flags ad-hoc debug output (fmt.Println / console.log / print / debugger) left in source; propose-only"
+severity    = "low"
+languages   = ["go", "ts"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind      = "deterministic"
+transform = "delete-match"
+
+[verify]
+checks = ["compile", "detector-clears"]

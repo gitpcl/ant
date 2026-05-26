@@ -3,6 +3,7 @@ package colony
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/gitpcl/ant/internal/engine"
 	"github.com/gitpcl/ant/internal/engine/detect"
@@ -129,6 +130,29 @@ func buildFixer(m species.Manifest, rc RecipeConfig) engine.Fixer {
 			return unwiredFixer{species: m.Name, reason: err.Error()}
 		}
 		return fixer
+	case species.FixKindTool:
+		// Tool-runner: exec the manifest-declared external formatter/autofixer on a
+		// scratch copy and capture the diff (Sprint 017). Command + args are
+		// declarative; the engine special-cases no tool. A malformed timeout string
+		// is a build error surfaced as a visible skip (never a silent default).
+		var timeout time.Duration
+		if m.Fix.Timeout != "" {
+			d, err := time.ParseDuration(m.Fix.Timeout)
+			if err != nil {
+				return unwiredFixer{species: m.Name, reason: fmt.Sprintf("invalid [fix].timeout %q: %v", m.Fix.Timeout, err)}
+			}
+			timeout = d
+		}
+		fixer, err := fix.NewTool(fix.ToolConfig{
+			Command:     m.Fix.Command,
+			Args:        m.Fix.Args,
+			Timeout:     timeout,
+			VersionArgs: m.Fix.VersionArgs,
+		})
+		if err != nil {
+			return unwiredFixer{species: m.Name, reason: err.Error()}
+		}
+		return fixer
 	default:
 		return unwiredFixer{species: m.Name, reason: fmt.Sprintf("fix kind %q is not supported", m.Fix.Kind)}
 	}
@@ -155,6 +179,15 @@ func verifierBuilder(m species.Manifest, det engine.Detector, limits verify.Limi
 				// fallback, sharing the colony-wide coverage cache; runs ONLY the
 				// affected tests and reports the strategy used (TECHSPEC §5.3.1).
 				rest = append(rest, verify.NewTestsAffected(verify.AffectedConfig{Cache: coverCache}))
+			case verify.CheckFormatterIdempotence:
+				// Re-run the manifest-declared formatter over the post-fix tree and
+				// assert no further changes (Sprint 017). The tool is declared in
+				// [verify.tool]; a non-idempotent/oscillating formatter FAILS here (a
+				// trust signal), never loops. nil runner → the real exec runner.
+				rest = append(rest, verify.NewFormatterIdempotence(verify.ToolSpec{
+					Command: m.Verify.Tool.Command,
+					Args:    m.Verify.Tool.Args,
+				}, nil))
 			case "diff-bounded":
 				// diff-bounded is always prepended by NewGate; skip an explicit one.
 			default:

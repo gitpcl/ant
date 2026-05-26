@@ -61,13 +61,15 @@ func NewRegistry() *Registry {
 		fixKinds: map[string]struct{}{
 			FixKindDeterministic: {},
 			FixKindLLM:           {},
+			FixKindTool:          {},
 		},
 		verifyBase: map[string]struct{}{
-			"compile":         {},
-			"tests:affected":  {},
-			"tests:all":       {},
-			"detector-clears": {},
-			"diff-bounded":    {},
+			"compile":               {},
+			"tests:affected":        {},
+			"tests:all":             {},
+			"detector-clears":       {},
+			"diff-bounded":          {},
+			"formatter-idempotence": {},
 		},
 	}
 }
