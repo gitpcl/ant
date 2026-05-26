@@ -1,0 +1,8 @@
+--- a/repo.go
++++ b/repo.go
+@@ -16,4 +16,5 @@
+ 	f, err := os.Open(path)
+ 	if err != nil {
+ 		return 0, err
+ 	}
++	defer f.Close()

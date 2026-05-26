@@ -1,0 +1,27 @@
+# Detector rule for the unchecked-type-assertion species (LLM-assisted,
+# ADR-0002 / ADR-0004).
+#
+# Go interpretation: a type assertion `x.(T)` has two forms. The two-result
+# comma-ok form `v, ok := x.(T)` is safe — `ok` reports whether the assertion
+# held. The SINGLE-result form `v := x.(T)` is unchecked: if x's dynamic type is
+# not T, it PANICS at runtime. This rule nominates the unchecked single-result
+# assertion bound by a short-var declaration: `$V := $X.($T)`.
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: ast-grep cannot prove
+# the dynamic type is ever wrong at runtime (the assertion may be guaranteed by
+# surrounding logic) — it structurally NOMINATES the unchecked-assertion smell.
+# The verify gate confirms the specific finding: the LLM fix rewrites it to the
+# comma-ok form and handles the not-ok branch, then `compile` + `tests:affected` +
+# `detector-clears` prove the rewrite compiles, keeps the affected tests green,
+# and the single-result `$V := $X.($T)` shape is gone (this rule matches zero).
+#
+# The pattern matches the short-var single-result form only; the comma-ok form
+# `v, ok := x.(T)` is a two-LHS assignment and does not match. severity is
+# `warning` so `ast-grep scan` exits 0 on a match. auto_apply is false: a missed
+# not-ok branch is a judgement call, so the comma-ok rewrite is staged for review.
+id: unchecked-type-assertion
+language: go
+severity: warning
+message: 'Unchecked type assertion (`v := x.(T)`); a wrong dynamic type panics at runtime — use the comma-ok form and handle the not-ok case'
+rule:
+  pattern: $V := $X.($T)

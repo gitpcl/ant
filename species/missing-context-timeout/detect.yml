@@ -1,0 +1,30 @@
+# Detector rule for the missing-context-timeout species (LLM-assisted,
+# ADR-0002 / ADR-0004).
+#
+# Go interpretation: a blocking network/DB call should be governed by a
+# request-scoped context with a timeout, so it cannot hang forever. The smell is
+# passing `context.Background()` (or context.TODO()) DIRECTLY into such a call:
+# Background never cancels and carries no deadline, so the call has no bound. This
+# rule nominates a call whose FIRST argument is a literal `context.Background()`
+# (the idiomatic ctx-first call convention): `$FN(context.Background(), $$$REST)`.
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: ast-grep cannot prove
+# the callee actually performs I/O or that no deadline is set elsewhere — it
+# structurally NOMINATES the no-timeout-context smell. The verify gate confirms
+# the specific finding: the LLM fix derives a `ctx` from
+# `context.WithTimeout(context.Background(), …)` (with its `defer cancel()`) and
+# passes that `ctx` instead, then `compile` + `tests:affected` + `detector-clears`
+# prove the rewrite compiles, keeps the affected tests green, and the call no
+# longer passes a literal `context.Background()` as its first argument — so this
+# rule matches zero times (the Background() literal now lives inside WithTimeout,
+# not at the call site).
+#
+# severity is `warning` so `ast-grep scan` exits 0 on a match. auto_apply is
+# false: the right timeout value and whether to thread an existing request context
+# are judgement calls, so the timeout rewrite is staged for human review.
+id: missing-context-timeout
+language: go
+severity: warning
+message: 'Call passes context.Background() directly (no timeout/deadline); it can hang forever — derive a context.WithTimeout and pass that instead'
+rule:
+  pattern: $FN(context.Background(), $$$REST)

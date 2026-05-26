@@ -18,6 +18,17 @@
 // (auto_apply=true, gated by formatter-idempotence + compile) and lint-autofix
 // (auto_apply=true, gated by compile + tests:affected), plus trailing-debug-code
 // (deterministic delete-match, propose-only).
+//
+// The Sprint 018 P3 bug-risk wave adds LLM-assisted, propose-only (auto_apply=
+// false) species, each gated by compile + tests:affected + detector-clears with a
+// recorded fixer response in CI: ignored-error (flagship — discarded `v, _ :=`
+// error), unchecked-type-assertion (single-result `x.(T)`), resource-leak
+// (signature — os.Open with no Close on any path), missing-context-timeout
+// (context.Background() passed with no deadline), and unsafe-concurrency (premium
+// — unsynchronized goroutine writing shared state). The security-stage member is
+// sql-string-concat (SQL query built by string concatenation → bound parameter;
+// its fix moves the interpolated value out of the SQL text to close the injection
+// vector).
 package builtins
 
 import "embed"
@@ -28,7 +39,7 @@ import "embed"
 // embed.FS paths are always slash-separated and rooted at this directory, so the
 // resolver sees "unused-import/species.toml", etc.
 //
-//go:embed unused-import dead-code unused-variable redundant-conversion unreachable-code empty-block duplicate-condition redundant-nil-check ineffective-assignment formatter-drift import-sort lint-autofix trailing-debug-code n+1-query missing-await nil-deref ai-slop
+//go:embed unused-import dead-code unused-variable redundant-conversion unreachable-code empty-block duplicate-condition redundant-nil-check ineffective-assignment formatter-drift import-sort lint-autofix trailing-debug-code n+1-query missing-await nil-deref ai-slop ignored-error unchecked-type-assertion resource-leak missing-context-timeout unsafe-concurrency sql-string-concat
 var files embed.FS
 
 // FS returns the embedded built-in species tree as a read-only fs.FS-compatible

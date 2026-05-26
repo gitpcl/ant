@@ -1,0 +1,14 @@
+--- a/repo.go
++++ b/repo.go
+@@ -12,4 +12,8 @@
+-func AsString(v interface{}) string {
+-	s := v.(string)
+-	return s
+-}
++func AsString(v interface{}) (string, error) {
++	s, ok := v.(string)
++	if !ok {
++		return "", fmt.Errorf("expected string, got %T", v)
++	}
++	return s, nil
++}

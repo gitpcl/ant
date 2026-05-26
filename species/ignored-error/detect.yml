@@ -1,0 +1,30 @@
+# Detector rule for the ignored-error species (LLM-assisted, ADR-0002 / ADR-0004).
+# FLAGSHIP bug-risk species (Sprint 018).
+#
+# Go interpretation: the canonical "ignored error" smell is discarding a
+# function's error result into the blank identifier — `v, _ := call()` — so a
+# failure from `call` is silently swallowed and the code proceeds with a
+# possibly-invalid `v`. This is the single most common Go correctness bug and the
+# one `go vet`/`errcheck` flag first. This rule nominates that shape: a short-var
+# declaration whose SECOND binding is `_`, bound to a single call.
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: ast-grep cannot prove
+# the discarded second value is in fact an `error` (it could be a benign
+# `value, _ := m[key]` map-ok or `_, ok := ...` comma-ok) — it structurally
+# NOMINATES the discarded-second-return smell. The verify gate confirms the
+# specific finding: the LLM fix binds the discarded result to a named `err` and
+# handles it (propagate / log / guard), then `compile` + `tests:affected` +
+# `detector-clears` prove the rewrite compiles, keeps the affected tests green,
+# and the `$V, _ := $CALL(...)` shape is gone (this rule then matches zero times).
+#
+# The pattern constrains the match to a `$V, _ := $CALL($$$ARGS)` short-var decl
+# (the discarded-error shape) so it stays off unrelated single-value assignments.
+# severity is `warning` so `ast-grep scan` exits 0 on a match (the adapter treats
+# a non-zero exit as a run error). auto_apply is false: silently-swallowed errors
+# are a correctness risk, so the handled rewrite is always staged for human review.
+id: ignored-error
+language: go
+severity: warning
+message: 'Error result discarded into `_` (`v, _ := call()`); the failure is silently swallowed — bind and handle the error'
+rule:
+  pattern: $V, _ := $CALL($$$ARGS)

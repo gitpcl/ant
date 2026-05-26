@@ -1,0 +1,51 @@
+# Detector rule for the unsafe-concurrency species (LLM-assisted,
+# ADR-0002 / ADR-0004). PREMIUM/hard bug-risk species (Sprint 018).
+#
+# Go interpretation: spawning goroutines that write SHARED state with NO
+# synchronization is a data race and a goroutine-lifecycle bug — there is no
+# happens-before relationship between the concurrent writes and the read, and no
+# owner waits for the goroutines to finish. This rule nominates that shape with a
+# relational rule: a function declaration that HAS a `go func() { ... }()`
+# goroutine spawn but does NOT HAVE any `sync.` reference (no sync.Mutex,
+# sync.WaitGroup, etc.) anywhere in its body.
+#
+# This is intentionally DISTINCT from the missing-await species (which targets a
+# bare `go func` as the body of a *range loop*): unsafe-concurrency targets the
+# broader "goroutine without any sync primitive in the function" smell, including
+# fan-out that is not a simple range-loop body.
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: ast-grep cannot prove
+# the goroutine actually races (the state might be goroutine-local, or sync might
+# come from a channel rather than the `sync` package) — it structurally NOMINATES
+# the unsynchronized-goroutine smell. The verify gate confirms the specific
+# finding: the LLM fix adds the missing synchronization (a sync.Mutex guarding the
+# shared write AND a sync.WaitGroup so the spawn's lifecycle is owned), then
+# `compile` + `tests:affected` + `detector-clears` prove the rewrite compiles,
+# keeps the affected tests green, and the function now HAS a `sync.` reference —
+# so the `go func && not sync.` shape no longer matches.
+#
+# RACE CHECK (contract, Sprint 018): the Ant verify check set is closed and has no
+# per-species `-race` token; adding one is an engine change (out of scope). As
+# with missing-await, race safety is asserted at CI time via `go test -race` over
+# the whole suite — the recorded fix is authored so the post-fix code is race-free
+# (mutex-guarded write, WaitGroup-owned lifecycle), which `-race` confirms. The
+# fixture's repo_test.go exercises the fixed concurrent path so the project DOES
+# support running it under -race.
+#
+# severity is `warning` so `ast-grep scan` exits 0 on a match. auto_apply is
+# false: a model edit to concurrency code is ALWAYS staged for human review even
+# when the gate passes (the highest-risk class of change).
+id: unsafe-concurrency
+language: go
+severity: warning
+message: 'Goroutine writes shared state with no synchronization (no sync primitive in the function); the concurrent write races and its lifecycle is unowned — add a mutex + WaitGroup'
+rule:
+  kind: function_declaration
+  all:
+    - has:
+        pattern: go func() { $$$BODY }()
+        stopBy: end
+    - not:
+        has:
+          pattern: sync.$PRIM
+          stopBy: end

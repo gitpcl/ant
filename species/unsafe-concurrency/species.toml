@@ -1,0 +1,26 @@
+name        = "unsafe-concurrency"
+description = "Detects a function that spawns goroutines writing shared state with no synchronization (no sync primitive) — a data race / goroutine-lifecycle bug; see detect.yml"
+severity    = "high"
+languages   = ["go"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+# unsafe-concurrency uses the SAME gate as the other concurrency species
+# (missing-await): compile + tests:affected + detector-clears. The contract asks
+# for a race check (`-race`) where the fixture supports it; the Ant verify check
+# set is closed (no per-species `-race` token — adding one is an engine change,
+# out of scope this sprint). As with missing-await, race-aware testing is a
+# project/CI-level `go test -race` concern that the recorded fix is authored to
+# satisfy: the post-fix code adds the missing sync primitive so the shared write
+# is race-free and the goroutine's lifecycle is owned, which `go test -race`
+# (run over the whole suite at CI time) confirms. detect.yml documents this.
+[verify]
+checks = ["compile", "tests:affected", "detector-clears"]

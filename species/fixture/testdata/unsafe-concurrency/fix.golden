@@ -1,0 +1,28 @@
+--- a/repo.go
++++ b/repo.go
+@@ -1,1 +1,3 @@
+ package unsafeconcurrency
++
++import "sync"
+@@ -12,9 +14,16 @@
+ func CountUp(n int) int {
+ 	count := 0
+-	for i := 0; i < n; i++ {
+-		go func() {
+-			count++
+-		}()
+-	}
++	var mu sync.Mutex
++	var wg sync.WaitGroup
++	for i := 0; i < n; i++ {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			mu.Lock()
++			count++
++			mu.Unlock()
++		}()
++	}
++	wg.Wait()
+ 	return count
+ }

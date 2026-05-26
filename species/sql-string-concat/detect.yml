@@ -1,0 +1,43 @@
+# Detector rule for the sql-string-concat species (LLM-assisted, ADR-0002 /
+# ADR-0004). SECURITY-stage bug-risk species (Sprint 018) — SQL injection.
+#
+# Go interpretation: a SQL query passed to a database call (db.Query / QueryRow /
+# Exec, or any equivalent) must NOT be assembled by concatenating a string literal
+# with a runtime value. Concatenating untrusted input straight into the query text
+# (`"SELECT ... WHERE id = " + userVar`) is the canonical SQL-injection vector:
+# the value is interpreted as SQL rather than as data, so an attacker-controlled
+# input can rewrite the statement (drop tables, dump rows, bypass auth). This rule
+# nominates that shape: a call expression that HAS, anywhere in its arguments, a
+# string-concatenation (`+`) binary expression containing a string literal — i.e.
+# a query string built by interpolating a value into SQL text.
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: ast-grep cannot prove
+# the call is a SQL driver call or that the concatenated value is attacker-
+# controlled — it structurally NOMINATES the SQL-built-by-concatenation smell. The
+# verify gate confirms the specific finding: the LLM fix moves the interpolated
+# value(s) out of the query text into BOUND parameters (a placeholder `?` / `$1`
+# in the static query string plus the value passed as a trailing argument), then
+# `compile` + `tests:affected` + `detector-clears` prove the rewrite compiles,
+# keeps the affected tests green, and the query string is now a single static
+# literal with no `+` concatenation — so this rule matches zero times (the value
+# is bound by the driver, never spliced into SQL text).
+#
+# The relational `has`/`stopBy: end` reaches into the call's argument list to find
+# the concatenation; matching the enclosing `call_expression` (not the bare
+# binary) keeps the finding anchored at the query call site for the fix. severity
+# is `warning` so `ast-grep scan` exits 0 on a match (the adapter treats a
+# non-zero exit as a run error). auto_apply is false: SQL injection is a security
+# risk and the right binding (which values, `?` vs `$1`, query vs Exec) is a
+# review judgement, so the parameterized rewrite is always staged for human review.
+id: sql-string-concat
+language: go
+severity: warning
+message: 'SQL query built by string concatenation (`db.Query("... " + value)`) — the interpolated value is interpreted as SQL, a SQL-injection vector; move it to a bound parameter (`?`/`$1`)'
+rule:
+  kind: call_expression
+  has:
+    kind: binary_expression
+    stopBy: end
+    has:
+      kind: interpreted_string_literal
+      stopBy: end

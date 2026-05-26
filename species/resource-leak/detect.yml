@@ -1,0 +1,45 @@
+# Detector rule for the resource-leak species (LLM-assisted, ADR-0002 / ADR-0004).
+# SIGNATURE bug-risk species (Sprint 018).
+#
+# Go interpretation: a resource opened with `os.Open` (an *os.File) must be
+# closed on every return path, conventionally via `defer f.Close()` immediately
+# after the open succeeds. The leak is a function that opens the file but NEVER
+# calls Close anywhere in its body — so on every path the descriptor leaks. This
+# rule nominates exactly that shape with a relational rule: a function declaration
+# that HAS an `os.Open(...)` call but does NOT HAVE any `Close()` call.
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: ast-grep proves the
+# open exists and no Close call is present in the function, but it cannot prove
+# the *os.File outlives the function or is closed by a callee — it structurally
+# NOMINATES the open-without-close smell. The verify gate confirms the specific
+# finding: the LLM fix adds `defer f.Close()` (closing on ALL return paths, the
+# signature requirement), then `compile` + `tests:affected` + `detector-clears`
+# prove the rewrite compiles, keeps the affected tests green, and the function now
+# HAS a Close call — so the `os.Open && not Close` shape no longer matches.
+#
+# The relational `has`/`not has` keeps the match on leaking functions only: a
+# function that already defers Close has the Close call and does not match.
+# severity is `warning` so `ast-grep scan` exits 0 on a match. auto_apply is
+# false: where/how to close (defer vs explicit, error from Close) is a judgement
+# call, so the close-on-all-paths rewrite is staged for human review.
+#
+# Implementation note: the open is matched via the full short-var-declaration
+# `$F, $E := os.Open($A)` rather than a bare `os.Open(...)` call pattern, because
+# tree-sitter-go parses the bare `os.Open(x)` snippet AMBIGUOUSLY as a
+# type-conversion expression; the assignment form pins it to the real call. The
+# `not has $X.Close()` excludes any function that already closes (including the
+# post-fix `defer f.Close()`), so detector-clears passes after the fix.
+id: resource-leak
+language: go
+severity: warning
+message: 'File opened with os.Open is never closed on any path (no Close call in the function) — add `defer f.Close()` so it closes on every return path'
+rule:
+  kind: function_declaration
+  all:
+    - has:
+        pattern: $F, $E := os.Open($A)
+        stopBy: end
+    - not:
+        has:
+          pattern: $X.Close()
+          stopBy: end

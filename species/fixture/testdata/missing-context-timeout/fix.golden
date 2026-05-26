@@ -1,0 +1,17 @@
+--- a/repo.go
++++ b/repo.go
+@@ -3,1 +3,6 @@
+-import "context"
++import (
++	"context"
++	"time"
++)
+@@ -20,3 +25,5 @@
+-func Fetch(key string) (string, error) {
+-	return query(context.Background(), key)
+-}
++func Fetch(key string) (string, error) {
++	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
++	defer cancel()
++	return query(ctx, key)
++}

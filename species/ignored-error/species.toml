@@ -1,0 +1,17 @@
+name        = "ignored-error"
+description = "Detects an error result discarded into the blank identifier (`v, _ := call()`) — the ignored-error / unchecked-return smell; see detect.yml"
+severity    = "high"
+languages   = ["go"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+[verify]
+checks = ["compile", "tests:affected", "detector-clears"]

@@ -1,0 +1,14 @@
+--- a/repo.go
++++ b/repo.go
+@@ -18,4 +18,8 @@
+-func Port(raw string) int {
+-	port, _ := parsePort(raw)
+-	return port
+-}
++func Port(raw string) (int, error) {
++	port, err := parsePort(raw)
++	if err != nil {
++		return 0, err
++	}
++	return port, nil
++}
