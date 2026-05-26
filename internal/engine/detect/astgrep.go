@@ -43,8 +43,18 @@ type astgrepDetector struct {
 type commandRunner func(ctx context.Context, binary string, args []string) (stdout []byte, err error)
 
 // compile-time assertion that the adapter satisfies the engine.Detector
-// interface (TECHSPEC §5.1 / §5).
-var _ engine.Detector = (*astgrepDetector)(nil)
+// interface (TECHSPEC §5.1 / §5) AND the ScanSafeDetector marker: ast-grep runs
+// no species-supplied script, so it is safe on the read-only `ant scout` path
+// (unlike the command detector, which is deliberately NOT scan-safe).
+var (
+	_ engine.Detector         = (*astgrepDetector)(nil)
+	_ engine.ScanSafeDetector = (*astgrepDetector)(nil)
+)
+
+// ScanSafe marks the ast-grep detector as safe to run on the read-only scout
+// path: it shells out only to the vetted ast-grep matcher, never to a
+// species-supplied script (engine.ScanSafeDetector, Sprint 020 defense-in-depth).
+func (d *astgrepDetector) ScanSafe() bool { return true }
 
 // Option configures an astgrepDetector.
 type Option func(*astgrepDetector)

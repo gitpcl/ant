@@ -1,0 +1,4 @@
+--- a/go.mod
++++ b/go.mod
+@@ -7,1 +7,0 @@
+-	rsc.io/quote v1.5.2

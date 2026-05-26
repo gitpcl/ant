@@ -29,6 +29,7 @@ import (
 	"testing"
 
 	"github.com/gitpcl/ant/internal/engine"
+	"github.com/gitpcl/ant/internal/engine/detect"
 	"github.com/gitpcl/ant/internal/engine/fix"
 	"github.com/gitpcl/ant/internal/engine/species"
 	"github.com/gitpcl/ant/internal/engine/verify"
@@ -138,6 +139,14 @@ type Case struct {
 	// verifier exactly as in production).
 	ToolCommand string
 	ToolArgs    []string
+
+	// RequiredTools names external binaries a command species' detect/verify
+	// scripts need beyond its declared interpreter (e.g. "python3" for a config/
+	// YAML-parse verifier). When any is absent the case SKIPS — mirroring the
+	// ast-grep plugin-boundary skip — so CI without the tool stays green while the
+	// gate runs for real where present. Empty for species whose scripts use only
+	// universally-present tools (sh/awk/grep/sed/go).
+	RequiredTools []string
 }
 
 // RunCase executes the full detect → fix → verify pipeline for one species over
@@ -158,10 +167,6 @@ type Case struct {
 func RunCase(t *testing.T, c Case) {
 	t.Helper()
 
-	if !astGrepAvailable() {
-		t.Skipf("ast-grep not installed: skipping live %s fixture (detection is a plugin boundary, TECHSPEC §2)", c.Name)
-	}
-
 	// Resolve every path to absolute BEFORE changing the working directory:
 	// the detector, the scratch-tree verifiers, and the golden read/write must
 	// not depend on cwd once we chdir into the repo.
@@ -178,6 +183,13 @@ func RunCase(t *testing.T, c Case) {
 
 	reg := species.NewRegistry()
 	manifest := loadManifest(t, speciesDir, reg)
+
+	// Detection is a plugin boundary (TECHSPEC §2): an ast-grep species needs the
+	// ast-grep binary, so CI without it SKIPS (stays green) rather than failing. A
+	// command species (Sprint 020) depends only on its declared interpreter (sh),
+	// which is universally present, so it never skips on the ast-grep probe.
+	skipIfMatcherAbsent(t, c.Name, manifest)
+	skipIfToolsAbsent(t, c.Name, c.RequiredTools)
 
 	detector := buildDetector(t, reg, manifest, speciesDir)
 	scope := engine.Scope{Root: "."}
@@ -200,7 +212,7 @@ func RunCase(t *testing.T, c Case) {
 	patches := make([]string, 0, len(findings))
 	for _, f := range findings {
 		diff := runFix(t, c, fixer, f)
-		runVerify(t, c, reg, manifest, detector, scope, limits, f, diff)
+		runVerify(t, c, speciesDir, reg, manifest, detector, scope, limits, f, diff)
 		patches = append(patches, concatPatch(diff))
 	}
 
@@ -228,16 +240,16 @@ func RunCase(t *testing.T, c Case) {
 func RunDetectOnlyCase(t *testing.T, c Case, expectMatches int) {
 	t.Helper()
 
-	if !astGrepAvailable() {
-		t.Skipf("ast-grep not installed: skipping live %s detect-only fixture (detection is a plugin boundary, TECHSPEC §2)", c.Name)
-	}
-
 	speciesDir := mustAbs(t, c.SpeciesDir)
 	repoDir := mustAbs(t, c.RepoDir)
 	t.Chdir(repoDir)
 
 	reg := species.NewRegistry()
 	manifest := loadManifest(t, speciesDir, reg)
+	// ast-grep species skip when the matcher is absent; a command species never
+	// does (it depends only on its interpreter). See skipIfMatcherAbsent.
+	skipIfMatcherAbsent(t, c.Name, manifest)
+	skipIfToolsAbsent(t, c.Name, c.RequiredTools)
 	detector := buildDetector(t, reg, manifest, speciesDir)
 	scope := engine.Scope{Root: "."}
 
@@ -316,12 +328,24 @@ func loadManifest(t *testing.T, speciesDir string, reg *species.Registry) specie
 	return m
 }
 
-// buildDetector constructs the species' detector through the registry, with the
-// rule path resolved to the on-disk species folder so the production ast-grep
-// adapter reads the real detect.yml. This is the same Detector the CLI builds —
-// the harness does not hand-roll detection.
+// buildDetector constructs the species' detector with its rule/script resolved to
+// the on-disk species folder, so the production adapter reads the real detect.yml
+// (ast-grep) or runs the real detect.sh (command). This is the same Detector the
+// CLI builds — the harness does not hand-roll detection. A command species is
+// built DIRECTLY (detect.NewCommand) with the manifest's declared interpreter,
+// because the registry constructor only knows the default interpreter; a fixture
+// species is a vetted on-disk artifact (the harness's equivalent of OriginBuiltin),
+// so the scan-time trust gate does not apply here.
 func buildDetector(t *testing.T, reg *species.Registry, m species.Manifest, speciesDir string) engine.Detector {
 	t.Helper()
+	if m.Detector.Kind == species.DetectKindCommand {
+		interp := m.Detector.Interpreter
+		if interp == "" {
+			interp = species.DefaultScriptInterpreter
+		}
+		scriptPath := filepath.Join(speciesDir, m.Detector.Script)
+		return detect.NewCommand(m.Name, interp, scriptPath)
+	}
 	rulePath := filepath.Join(speciesDir, m.Detector.Rule)
 	det, err := reg.Detector(m.Detector.Kind, m.Name, rulePath)
 	if err != nil {
@@ -377,9 +401,9 @@ func runFix(t *testing.T, c Case, fixer engine.Fixer, f engine.Finding) engine.P
 // manifest's [verify].checks in declared order, with diff-bounded prepended by
 // verify.NewGate (TECHSPEC §8.1). detector-clears re-runs the SAME detector over
 // the patched scratch tree.
-func runVerify(t *testing.T, c Case, reg *species.Registry, m species.Manifest, detector engine.Detector, scope engine.Scope, limits verify.Limits, f engine.Finding, diff engine.ProposedDiff) {
+func runVerify(t *testing.T, c Case, speciesDir string, reg *species.Registry, m species.Manifest, detector engine.Detector, scope engine.Scope, limits verify.Limits, f engine.Finding, diff engine.ProposedDiff) {
 	t.Helper()
-	gate := buildGate(t, c, reg, m, detector, limits, f)
+	gate := buildGate(t, c, speciesDir, reg, m, detector, limits, f)
 	res := gate.Verify(context.Background(), diff, scope)
 	if !res.Passed {
 		t.Fatalf("%s: verifier gate REJECTED the fix for %s:%d (the fixture must verify end-to-end): %s",
@@ -393,8 +417,12 @@ func runVerify(t *testing.T, c Case, reg *species.Registry, m species.Manifest, 
 // check (the gate that makes propose-only LLM fixes safe — ADR-0002) are wired
 // here against the REAL production verifiers, so an LLM species fixture proves the
 // genuine detect→fix→verify path, not a stub gate.
-func buildGate(t *testing.T, c Case, reg *species.Registry, m species.Manifest, detector engine.Detector, limits verify.Limits, f engine.Finding) engine.Verifier {
+func buildGate(t *testing.T, c Case, speciesDir string, reg *species.Registry, m species.Manifest, detector engine.Detector, limits verify.Limits, f engine.Finding) engine.Verifier {
 	t.Helper()
+	interp := m.Verify.Interpreter
+	if interp == "" {
+		interp = species.DefaultScriptInterpreter
+	}
 	rest := make([]engine.Verifier, 0, len(m.Verify.Checks))
 	for _, check := range m.Verify.Checks {
 		switch check {
@@ -424,6 +452,18 @@ func buildGate(t *testing.T, c Case, reg *species.Registry, m species.Manifest, 
 		case verify.CheckDiffBounded:
 			// diff-bounded is prepended by NewGate; skip a duplicate here.
 		default:
+			// command:<script> escape hatch (Sprint 020): run the species-declared
+			// verifier script on a scratch copy of the post-fix tree (install/parse/
+			// lint/compile gate). Resolved to the on-disk species folder so the REAL
+			// production verifier runs the REAL script — the fixture proves the
+			// genuine detect→fix→command:verify path, not a stub. A fixture species is
+			// vetted on-disk (the harness's OriginBuiltin equivalent), so the
+			// scan-time trust gate does not apply here.
+			if script, ok := verify.ScriptFromCheck(check); ok {
+				scriptPath := filepath.Join(speciesDir, script)
+				rest = append(rest, verify.NewCommandVerifier(check, interp, scriptPath))
+				continue
+			}
 			t.Fatalf("%s: verify check %q is declared but not wired in the fixture harness (extend buildGate for new checks)", m.Name, check)
 		}
 	}
@@ -524,4 +564,39 @@ func sortFindings(findings []engine.Finding) {
 func astGrepAvailable() bool {
 	_, err := exec.LookPath(astGrepBinary)
 	return err == nil
+}
+
+// skipIfMatcherAbsent skips the case ONLY when the species needs an external
+// matcher binary that is not installed. An ast-grep species (the default kind)
+// depends on the ast-grep binary, which detection treats as a plugin boundary
+// (TECHSPEC §2), so CI without it skips rather than fails. A command species
+// (Sprint 020) depends only on the interpreter it declares (sh / bash / python3),
+// which is universally present, so it is never skipped on the ast-grep probe —
+// its detect/verify scripts run for real, hermetically. This keeps the deps
+// species genuinely exercised in CI while preserving the existing ast-grep skip.
+func skipIfMatcherAbsent(t *testing.T, name string, m species.Manifest) {
+	t.Helper()
+	kind := m.Detector.Kind
+	if kind == "" {
+		kind = m.Detect.Kind
+	}
+	if kind == species.DetectKindCommand {
+		return // command species: no ast-grep dependency
+	}
+	if !astGrepAvailable() {
+		t.Skipf("ast-grep not installed: skipping live %s fixture (detection is a plugin boundary, TECHSPEC §2)", name)
+	}
+}
+
+// skipIfToolsAbsent skips the case when any external tool its scripts need (beyond
+// the declared interpreter) is not on PATH — e.g. a config/YAML-parse verifier
+// that calls python3. This keeps CI green on a host without the tool while the
+// gate runs FOR REAL where present, mirroring the ast-grep plugin-boundary skip.
+func skipIfToolsAbsent(t *testing.T, name string, tools []string) {
+	t.Helper()
+	for _, tool := range tools {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skipf("%s not installed: skipping live %s fixture (its command verifier needs %s; CI without it stays green)", tool, name, tool)
+		}
+	}
 }

@@ -3,6 +3,7 @@ package events
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/gitpcl/ant/internal/engine"
 )
@@ -70,16 +71,66 @@ func renderHumanEvent(w io.Writer, ev Event, detail bool) error {
 
 // renderFinding prints one finding. The compact form is a single line; --detail
 // adds the snippet and the owning species' rule provenance.
+//
+// SECURITY (Sprint 020 LOW, defense-in-depth): Message and Snippet can be
+// SCRIPT-CONTROLLED — a `command` detector emits them on stdout, so a
+// reviewed-but-malicious community species could inject ANSI / terminal-escape
+// sequences that hijack the reviewer's TTY. They are sanitized before the
+// terminal write (control chars stripped, \n/\t preserved). This is the same
+// defense class as fix/tool.go's sanitizeVersion. The --json path is untouched
+// and unaffected: json.go encodes via json.NewEncoder, which already escapes
+// control bytes, so the wire contract (scout-json.golden) is byte-unchanged.
 func renderFinding(w io.Writer, f engine.Finding, detail bool) error {
 	if _, err := fmt.Fprintf(w, "  [%s] %s:%d:%d  %s (%s)\n",
-		f.Severity, f.File, f.Span.StartLine, f.Span.StartCol, f.Message, f.Species); err != nil {
+		f.Severity, f.File, f.Span.StartLine, f.Span.StartCol, sanitizeControl(f.Message), f.Species); err != nil {
 		return err
 	}
 	if detail && f.Snippet != "" {
-		_, err := fmt.Fprintf(w, "        %s\n", f.Snippet)
+		_, err := fmt.Fprintf(w, "        %s\n", sanitizeControl(f.Snippet))
 		return err
 	}
 	return nil
+}
+
+// sanitizeControl strips non-printable control characters from a string before it
+// is written to a terminal, PRESERVING newline and tab (legitimate layout). It
+// removes C0 controls (incl. ESC 0x1b, the lead byte of ANSI/CSI sequences, and
+// CR 0x0d) and DEL (0x7f), neutralizing terminal-escape injection from
+// script-controlled finding text. Unlike fix.sanitizeVersion (which also drops
+// \n/\t and truncates — correct for a one-line version string) this keeps \n/\t,
+// since a finding message/snippet may legitimately span lines; the two helpers
+// share the defense intent but not the semantics, so they are kept separate
+// rather than coupling the events and fix packages. Operates on bytes: any byte
+// >= 0x20 except DEL is kept, so valid UTF-8 multi-byte runes (all continuation/
+// lead bytes are >= 0x80) pass through untouched.
+func sanitizeControl(s string) string {
+	if !strings.ContainsFunc(s, isStrippableControl) {
+		return s // common case: nothing to strip, no allocation
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; !isStrippableControlByte(c) {
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// isStrippableControlByte reports whether byte c is a control char to strip: any
+// C0 control (< 0x20) other than tab/newline, or DEL (0x7f).
+func isStrippableControlByte(c byte) bool {
+	if c == '\n' || c == '\t' {
+		return false
+	}
+	return c < 0x20 || c == 0x7f
+}
+
+// isStrippableControl is the rune predicate for the fast-path ContainsFunc probe;
+// it mirrors isStrippableControlByte for the ASCII control range (the only range
+// that matters — multi-byte runes are all >= 0x80 and never stripped).
+func isStrippableControl(r rune) bool {
+	return r < 0x80 && isStrippableControlByte(byte(r))
 }
 
 // renderVerified prints a one-line confirmation that an ant's fix passed

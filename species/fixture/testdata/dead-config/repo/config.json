@@ -1,0 +1,5 @@
+{
+  "deadFeatureFlag": true,
+  "activeTimeout": 30,
+  "serviceName": "fixture"
+}

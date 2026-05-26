@@ -1,0 +1,14 @@
+name: ci
+on:
+  push:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo setup
+      - run: go test ./...
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo setup
+      - run: go vet ./...

@@ -1,0 +1,4 @@
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -13,1 +13,0 @@
+-      - run: echo setup

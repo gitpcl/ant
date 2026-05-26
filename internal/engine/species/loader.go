@@ -169,10 +169,26 @@ func validate(fsys fs.FS, dir string, m Manifest, reg *Registry) error {
 		if err := reg.CheckVerifyKind(check); err != nil {
 			return bad("unknown [verify] check %q (known: %s, or command:<script>)", check, reg.VerifyKinds())
 		}
+		// A command:<script> check names a script that MUST exist in the species
+		// folder (mirroring the [detector].script existence rule). An empty suffix
+		// (a bare "command:") is rejected by the registry above; here we confirm the
+		// referenced file is present so a typo fails at load, not at run time.
+		if script, ok := strings.CutPrefix(check, CommandVerifyPrefix); ok {
+			if err := mustExist(fsys, dir, script); err != nil {
+				return bad("[verify] check %q script %q: %v", check, script, err)
+			}
+		}
 	}
 
 	return nil
 }
+
+// CommandVerifyPrefix is the escape-hatch token prefix for a command verifier in
+// [verify].checks (e.g. "command:verify.sh"). Kept here so the loader's
+// script-existence check and the registry's prefix recognition agree on one
+// spelling; the verify package mirrors it as verify.CommandCheckPrefix for the
+// runtime adapter (the two packages do not import each other).
+const CommandVerifyPrefix = "command:"
 
 // mustExist reports an error if ref does not name a readable file within dir of
 // fsys. Used to enforce "referenced files must exist per kind" (TECHSPEC §6.2).

@@ -1,0 +1,35 @@
+name        = "unused-dependency"
+description = "Removes dependencies declared in the manifest but never imported (cross-file analysis the AST matcher cannot do)"
+severity    = "medium"
+languages   = ["go"]
+auto_apply  = false
+enabled     = true
+
+# SIGNATURE species (Sprint 020): the command detector cross-references the
+# manifest's declared dependencies against the imports actually used across the
+# tree — analysis ast-grep cannot express (it matches within ONE file's AST). The
+# script emits a finding per declared-but-unimported require; the deterministic
+# delete-match fix removes that require line; the command: verifier proves the
+# project still builds + vets after removal (install + compile/tests gate).
+#
+# Propose-only initially (auto_apply=false). NOTE: high-confidence ecosystems
+# (e.g. Go, where `go build`/`go mod tidy` give an exact import graph) could
+# graduate this to auto_apply=true in a later wave once accept-rate telemetry
+# supports it; it ships propose-only so a human confirms every manifest edit.
+
+[detector]
+kind        = "command"
+script      = "detect.sh"
+interpreter = "sh"
+
+[fix]
+kind      = "deterministic"
+transform = "delete-match"
+
+# verify gate: a command: script that runs `go build`/`go vet` over the scratch
+# copy (the "install + compile/tests" gate for Go — hermetic & offline because the
+# fixture module has no external deps), then detector-clears (the removed require
+# is gone). diff-bounded is prepended by the engine.
+[verify]
+checks      = ["command:verify.sh", "detector-clears"]
+interpreter = "sh"

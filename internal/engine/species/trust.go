@@ -82,6 +82,19 @@ type TrustDecision struct {
 	Configured         bool // Sprint-004 ant.toml-or-manifest auto-apply (pre-override)
 	EffectiveAutoApply bool // final decision: may a verified diff auto-land?
 	FreshlyInstalled   bool // true when the override is actively holding this species propose-only
+
+	// ScriptExecAllowed answers a SECOND, broader trust question the Sprint-020
+	// command escape hatch introduced: may this species' command DETECTOR /
+	// command: VERIFIER script execute at all? A command detector runs at SCAN
+	// time — a wider exec surface than the fix-time tool runner — so an untrusted
+	// (OriginUser, never-reviewed) community species must NOT auto-run its script
+	// before a human has reviewed it once. Built-in species are vetted at release
+	// time and may always run; a user species may run only after one review. This
+	// is computed by the SINGLE trust authority (ScriptExecTrust) so the colony
+	// composition root only reads a boolean. It is independent of auto-apply: a
+	// propose-only built-in still runs its detector (you must detect to propose),
+	// while a freshly-installed user species is blocked from scan-time exec.
+	ScriptExecAllowed bool
 }
 
 // ResolveTrust is the entry point the CLI composition root calls: given the
@@ -111,7 +124,8 @@ func ResolveTrust(resolved []Resolved, store TrustStore) ([]TrustDecision, error
 			// The override is actively holding this species only when configured
 			// trust WANTED auto-apply but the freshly-installed gate denied it for an
 			// installed species.
-			FreshlyInstalled: r.EffectiveAutoApply && r.Origin == OriginUser && st.FreshlyInstalled(),
+			FreshlyInstalled:  r.EffectiveAutoApply && r.Origin == OriginUser && st.FreshlyInstalled(),
+			ScriptExecAllowed: ScriptExecTrust(r, st),
 		})
 	}
 	return out, nil
@@ -145,4 +159,26 @@ func EffectiveTrust(r Resolved, state TrustState) bool {
 		return false // first run, never reviewed → forced propose-only
 	}
 	return true
+}
+
+// ScriptExecTrust is the trust authority for the SECOND question the Sprint-020
+// command escape hatch raises: may this species' command DETECTOR / command:
+// VERIFIER script EXECUTE? Unlike EffectiveTrust (which gates auto-APPLY and so
+// only matters once a diff is produced), this gates EXEC at SCAN time — a
+// command detector runs the moment `ant scout`/`ant fix` resolves the species,
+// before any human sees output. The rule mirrors the freshly-installed override
+// but is INDEPENDENT of auto-apply:
+//
+//   - Built-in species (OriginBuiltin) are vetted at release time → always allowed
+//     (a propose-only built-in still must run its detector to find anything).
+//   - User/installed species (OriginUser) may run their script ONLY after one
+//     `ant review` pass (state.Reviewed); a brand-new, never-reviewed user
+//     species is blocked from scan-time exec regardless of its manifest/ant.toml.
+//     This is the property that makes installing a third-party command-detector
+//     species safe: its script cannot run on your tree on first sight.
+func ScriptExecTrust(r Resolved, state TrustState) bool {
+	if r.Origin == OriginBuiltin {
+		return true
+	}
+	return !state.FreshlyInstalled()
 }

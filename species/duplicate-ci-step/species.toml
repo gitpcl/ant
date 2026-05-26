@@ -1,0 +1,35 @@
+name        = "duplicate-ci-step"
+description = "Consolidates a CI step duplicated across jobs/workflows (keeps the YAML parseable)"
+severity    = "low"
+languages   = ["yaml"]
+auto_apply  = false
+enabled     = true
+
+# Detects a CI step whose `run:` command is duplicated across jobs in a workflow
+# YAML — a repeated step sequence that should be consolidated into a reusable
+# job/composite action/script. Cross-block analysis ast-grep cannot express (the
+# duplication spans separate jobs). The script flags the duplicate step's `- run:`
+# line (the occurrence after the first); the deterministic delete-match fix
+# removes that step line; the command: verifier PARSES/LINTS the post-fix YAML to
+# prove it stays structurally valid (the YAML-parse + lint/dry-run gate the
+# contract requires) — a removal that corrupted the indentation/structure fails
+# the gate and is skipped.
+#
+# Propose-only (auto_apply=false): consolidating CI is a judgement call (the right
+# target — reusable workflow vs composite action vs script — is human-chosen), so
+# Ant proposes the de-duplication and a human applies it. This differentiates Ant
+# beyond source code into CI config.
+
+[detector]
+kind        = "command"
+script      = "detect.sh"
+interpreter = "sh"
+
+[fix]
+kind      = "deterministic"
+transform = "delete-match"
+
+# The YAML-parse/lint command: verifier keeps the workflow parseable after removal.
+[verify]
+checks      = ["command:verify.sh"]
+interpreter = "sh"

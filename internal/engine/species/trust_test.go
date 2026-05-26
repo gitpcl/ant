@@ -211,3 +211,80 @@ func TestFreshOverride_StoreLoadErrorSurfaces(t *testing.T) {
 		t.Fatalf("ResolveTrust should surface the load error; got %v", err)
 	}
 }
+
+// ---- Sprint 020: scan-time command-script exec trust gate (SECURITY) ----
+
+// TestScriptExecTrust_BuiltinAlwaysAllowed: a built-in (vetted) species may run
+// its command detector/verifier script from first run — independent of auto-apply
+// (a propose-only built-in still must detect to propose).
+func TestScriptExecTrust_BuiltinAlwaysAllowed(t *testing.T) {
+	builtin := Resolved{Manifest: Manifest{Name: "unused-dependency"}, Origin: OriginBuiltin}
+	// Brand-new state (never seen, never reviewed) AND configured propose-only.
+	if !ScriptExecTrust(builtin, TrustState{}) {
+		t.Fatal("a vetted built-in must be allowed to run its command script from first run")
+	}
+}
+
+// TestScriptExecTrust_UnreviewedUserBlocked: a freshly-installed (OriginUser,
+// never-reviewed) community species must NOT run its command script at scan time
+// before a human review — the core Sprint-020 security property.
+func TestScriptExecTrust_UnreviewedUserBlocked(t *testing.T) {
+	user := Resolved{Manifest: Manifest{Name: "third-party-deps"}, Origin: OriginUser}
+	if ScriptExecTrust(user, TrustState{}) {
+		t.Fatal("a freshly-installed, never-reviewed USER species must be BLOCKED from scan-time command-script exec; got allowed — the security property is broken")
+	}
+	// Even merely "seen" (present on a prior run) but not reviewed stays blocked:
+	// the override lifts on REVIEW, not on being seen.
+	if ScriptExecTrust(user, TrustState{Seen: true}) {
+		t.Fatal("seen-but-unreviewed USER species must still be blocked from scan-time exec")
+	}
+}
+
+// TestScriptExecTrust_ReviewedUserAllowed: once a user species has been reviewed
+// once, its configured trust applies and its script may run.
+func TestScriptExecTrust_ReviewedUserAllowed(t *testing.T) {
+	user := Resolved{Manifest: Manifest{Name: "third-party-deps"}, Origin: OriginUser}
+	if !ScriptExecTrust(user, TrustState{Reviewed: true}) {
+		t.Fatal("a USER species reviewed once must be allowed to run its command script")
+	}
+}
+
+// TestScriptExecTrust_IndependentOfAutoApply: the exec gate does NOT depend on
+// auto-apply config — a propose-only user species reviewed once may still run its
+// detector (you must detect to propose), and an unreviewed one is blocked even if
+// its manifest wanted auto-apply.
+func TestScriptExecTrust_IndependentOfAutoApply(t *testing.T) {
+	// propose-only (EffectiveAutoApply=false) but reviewed user species → allowed.
+	proposeOnlyReviewed := Resolved{Manifest: Manifest{Name: "a"}, Origin: OriginUser, EffectiveAutoApply: false}
+	if !ScriptExecTrust(proposeOnlyReviewed, TrustState{Reviewed: true}) {
+		t.Error("a reviewed user species must run its detector even when configured propose-only")
+	}
+	// auto-apply-wanting but unreviewed user species → blocked (exec independent of apply).
+	autoWanted := Resolved{Manifest: Manifest{Name: "b"}, Origin: OriginUser, EffectiveAutoApply: true}
+	if ScriptExecTrust(autoWanted, TrustState{}) {
+		t.Error("an unreviewed user species must be blocked from exec regardless of its auto-apply config")
+	}
+}
+
+// TestResolveTrust_PopulatesScriptExecAllowed: ResolveTrust threads the exec gate
+// onto each TrustDecision so the colony reads a single boolean.
+func TestResolveTrust_PopulatesScriptExecAllowed(t *testing.T) {
+	resolved := []Resolved{
+		{Manifest: Manifest{Name: "builtin-deps"}, Origin: OriginBuiltin},
+		{Manifest: Manifest{Name: "user-deps"}, Origin: OriginUser},
+	}
+	decisions, err := ResolveTrust(resolved, &fakeTrustStore{}) // empty store → user species fresh
+	if err != nil {
+		t.Fatalf("ResolveTrust: %v", err)
+	}
+	got := map[string]bool{}
+	for _, d := range decisions {
+		got[d.Resolved.Manifest.Name] = d.ScriptExecAllowed
+	}
+	if !got["builtin-deps"] {
+		t.Error("built-in species ScriptExecAllowed should be true")
+	}
+	if got["user-deps"] {
+		t.Error("freshly-installed user species ScriptExecAllowed should be false")
+	}
+}

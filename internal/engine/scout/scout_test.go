@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gitpcl/ant/internal/engine"
@@ -15,7 +16,9 @@ import (
 )
 
 // fakeDetector returns canned findings (or an error) so scout's orchestration,
-// filtering, and event sequence are tested without any external binary.
+// filtering, and event sequence are tested without any external binary. It stands
+// in for a built-in ast-grep detector, so it is ScanSafe (runs no script) — scout
+// admits only scan-safe detectors (the Sprint-020 defense-in-depth guard).
 type fakeDetector struct {
 	findings []engine.Finding
 	err      error
@@ -23,6 +26,20 @@ type fakeDetector struct {
 
 func (f fakeDetector) Detect(context.Context, engine.Scope) ([]engine.Finding, error) {
 	return f.findings, f.err
+}
+
+// ScanSafe marks the fake as a stand-in for a vetted built-in detector (it runs
+// no species-supplied script), satisfying engine.ScanSafeDetector.
+func (f fakeDetector) ScanSafe() bool { return true }
+
+// scriptDetector is a fake NON-scan-safe detector: it is a plain engine.Detector
+// that does NOT implement ScanSafeDetector, standing in for a `command` detector
+// that would exec a species script at scan time. Scout must REJECT it. If its
+// Detect ever ran it would fail the test loudly (a scan-safe guard breach).
+type scriptDetector struct{}
+
+func (scriptDetector) Detect(context.Context, engine.Scope) ([]engine.Finding, error) {
+	return nil, errors.New("scriptDetector.Detect must never be reached: scout should reject it before running")
 }
 
 func finding(species, file string, line int, sev engine.Severity) engine.Finding {
@@ -201,6 +218,53 @@ func TestScoutNeverWritesWorkingTree(t *testing.T) {
 		if _, ok := before[path]; !ok {
 			t.Errorf("scout created a new file: %s", path)
 		}
+	}
+}
+
+// TestScoutRejectsNonScanSafeDetector is the Sprint-020 defense-in-depth guard
+// (FIX 1): scout must admit ONLY scan-safe detectors and reject any that would
+// exec a species script at scan time (a `command` detector). A non-scan-safe
+// detector is rejected with an operational error (exit code 2) NAMING the
+// species, and its Detect is NEVER called — so a future change that points scout
+// at resolved user/command detectors cannot silently bypass the trust gate.
+func TestScoutRejectsNonScanSafeDetector(t *testing.T) {
+	opts := Options{
+		Scope: engine.Scope{Root: "."},
+		Detectors: []engine.NamedDetector{
+			// A scan-safe built-in alongside a non-scan-safe (command-like) one: the
+			// presence of the unsafe one alone must abort the whole run.
+			{Species: "unused-import", Detector: fakeDetector{findings: []engine.Finding{finding("unused-import", "a.go", 1, engine.SeverityHigh)}}},
+			{Species: "unused-dependency", Detector: scriptDetector{}},
+		},
+		RunID: "fixed",
+	}
+	_, _, err := drain(t, opts)
+	if err == nil {
+		t.Fatal("scout must REJECT a non-scan-safe detector; got nil error")
+	}
+	if !errors.Is(err, engine.ErrOperational) {
+		t.Errorf("rejection must classify as engine.ErrOperational (exit 2); got %v", err)
+	}
+	if !strings.Contains(err.Error(), "unused-dependency") {
+		t.Errorf("error should name the offending species; got %v", err)
+	}
+	if !strings.Contains(err.Error(), "scan-safe") {
+		t.Errorf("error should explain the scan-safe invariant; got %v", err)
+	}
+}
+
+// TestScoutAdmitsScanSafeDetector is the positive companion: a run composed only
+// of scan-safe detectors proceeds normally (the guard does not over-reject).
+func TestScoutAdmitsScanSafeDetector(t *testing.T) {
+	opts := Options{
+		Scope: engine.Scope{Root: "."},
+		Detectors: []engine.NamedDetector{
+			{Species: "unused-import", Detector: fakeDetector{findings: []engine.Finding{finding("unused-import", "a.go", 1, engine.SeverityHigh)}}},
+		},
+		RunID: "fixed",
+	}
+	if _, _, err := drain(t, opts); err != nil {
+		t.Fatalf("scout must admit a scan-safe detector; got %v", err)
 	}
 }
 

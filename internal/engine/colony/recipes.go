@@ -69,7 +69,16 @@ func BuildRecipes(decisions []species.TrustDecision, antFilter []string, rulesRo
 			}
 		}
 
-		det, err := buildDetector(m, rulesRoot)
+		// SECURITY (Sprint 020): a command detector/verifier execs a SPECIES-SUPPLIED
+		// script — the detector at SCAN time, a broader exec surface than the fix-time
+		// tool runner. An untrusted (OriginUser, never-reviewed) community species must
+		// NOT auto-execute its script before a human has reviewed it once. The trust
+		// authority (species.ResolveTrust) computes ScriptExecAllowed per species; the
+		// colony just reads it and threads it into both the detector and verifier
+		// builders, so the policy stays in the single trust authority (trust.go).
+		commandExec := d.ScriptExecAllowed
+
+		det, err := buildDetector(m, rulesRoot, commandExec)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -77,21 +86,27 @@ func BuildRecipes(decisions []species.TrustDecision, antFilter []string, rulesRo
 
 		recipes[m.Name] = SpeciesRecipe{
 			Fixer:       buildFixer(m, rc),
-			NewVerifier: verifierBuilder(m, det, rc.Limits, coverCache),
+			NewVerifier: verifierBuilder(m, det, rulesRoot, rc.Limits, coverCache, commandExec),
 			AutoApply:   d.EffectiveAutoApply, // FINAL trust decision (post freshly-installed override)
 		}
 	}
 	return recipes, detectors, nil
 }
 
-// buildDetector constructs the species' detector. Only ast-grep is wired in v1
-// (the command escape hatch lands later); the rule path is resolved under
-// rulesRoot. The manifest's Detector.Rule is relative to the species FOLDER
-// (e.g. "detect.yml"), and the materialized built-in tree lays rules out as
-// <rulesRoot>/<species>/<rule> (mirroring detect.Builtins' "unused-import/detect.yml"
-// table), so the species name is joined in between. With an empty rulesRoot the
-// bare manifest-relative path is used (the recorded-fixture path needs no disk file).
-func buildDetector(m species.Manifest, rulesRoot string) (engine.Detector, error) {
+// buildDetector constructs the species' detector. ast-grep is the default;
+// command is the script escape hatch (Sprint 020). The rule/script path is
+// resolved under rulesRoot: the manifest's Detector.Rule/Script is relative to
+// the species FOLDER (e.g. "detect.yml" / "detect.sh"), and the materialized
+// built-in tree lays files out as <rulesRoot>/<species>/<file>, so the species
+// name is joined in between. With an empty rulesRoot the bare manifest-relative
+// path is used (the recorded-fixture path needs no disk file).
+//
+// commandExec is the SCAN-TIME TRUST GATE (computed by species.ResolveTrust): an
+// untrusted/freshly-installed user species is NOT allowed to exec its command
+// script before review. When a command-kind species is denied, buildDetector
+// returns a blockedDetector that surfaces a clear operational error on Detect
+// (never silently runs the script, never silently produces zero findings).
+func buildDetector(m species.Manifest, rulesRoot string, commandExec bool) (engine.Detector, error) {
 	d := m.Detector
 	if d.Kind == "" {
 		d = m.Detect // accept the [detect] alias
@@ -103,9 +118,34 @@ func buildDetector(m species.Manifest, rulesRoot string) (engine.Detector, error
 			rule = rulesRoot + "/" + m.Name + "/" + rule
 		}
 		return detect.NewASTGrep(m.Name, rule), nil
+	case species.DetectKindCommand:
+		if !commandExec {
+			// SECURITY: refuse to run an untrusted species' detector script.
+			return blockedDetector{species: m.Name}, nil
+		}
+		script := d.Script
+		if rulesRoot != "" && script != "" {
+			script = rulesRoot + "/" + m.Name + "/" + script
+		}
+		interp := d.Interpreter
+		if interp == "" {
+			interp = species.DefaultScriptInterpreter
+		}
+		return detect.NewCommand(m.Name, interp, script), nil
 	default:
 		return nil, fmt.Errorf("%w: species %q detector kind %q not wired for fix", engine.ErrOperational, m.Name, d.Kind)
 	}
+}
+
+// blockedDetector is the detector returned for a command-kind species whose
+// scan-time script exec is denied by the trust gate (an unreviewed user species).
+// It NEVER runs the script; Detect returns a clear operational error so the
+// reason is visible (exit-code 2 classification) rather than a silent zero-finding
+// run that would look like "no smells found".
+type blockedDetector struct{ species string }
+
+func (b blockedDetector) Detect(context.Context, engine.Scope) ([]engine.Finding, error) {
+	return nil, fmt.Errorf("%w: species %q uses a command detector and is not yet trusted to run its script (review it once with `ant review` to allow scan-time exec)", engine.ErrOperational, b.species)
 }
 
 // buildFixer maps the manifest fix kind to a concrete Fixer. deterministic uses
@@ -164,8 +204,18 @@ func buildFixer(m species.Manifest, rc RecipeConfig) engine.Fixer {
 // which is why the gate is built per finding, not per species. The shared
 // coverCache is passed to tests:affected so coverage is generated once per run and
 // reused across every ant (TECHSPEC §5.3.1).
-func verifierBuilder(m species.Manifest, det engine.Detector, limits verify.Limits, coverCache *testselect.ProfileCache) func(engine.Finding) engine.Verifier {
+// commandExec is the SCAN/VERIFY-TIME TRUST GATE (computed by species.ResolveTrust):
+// an untrusted/freshly-installed user species is NOT allowed to exec its command:
+// verifier script before review. When denied, a command: check is wired to a
+// blockedVerifier that FAILS the gate with a clear reason (never runs the script),
+// so the diff is skipped and the reason surfaces — a denied verifier must not
+// silently pass the gate.
+func verifierBuilder(m species.Manifest, det engine.Detector, rulesRoot string, limits verify.Limits, coverCache *testselect.ProfileCache, commandExec bool) func(engine.Finding) engine.Verifier {
 	checks := m.Verify.Checks
+	interp := m.Verify.Interpreter
+	if interp == "" {
+		interp = species.DefaultScriptInterpreter
+	}
 	return func(f engine.Finding) engine.Verifier {
 		var rest []engine.Verifier
 		for _, c := range checks {
@@ -191,12 +241,42 @@ func verifierBuilder(m species.Manifest, det engine.Detector, limits verify.Limi
 			case "diff-bounded":
 				// diff-bounded is always prepended by NewGate; skip an explicit one.
 			default:
-				// command:* lands in a later sprint; ignore an unknown check here
-				// rather than failing the whole run — the species still gets the
-				// gates it can run today.
+				// command:<script> escape hatch (Sprint 020): run the species-declared
+				// verifier script on the scratch copy (install/parse/lint/compile gate).
+				if script, ok := verify.ScriptFromCheck(c); ok {
+					if !commandExec {
+						rest = append(rest, blockedVerifier{name: c, species: m.Name})
+						break
+					}
+					if rulesRoot != "" && script != "" {
+						script = rulesRoot + "/" + m.Name + "/" + script
+					}
+					rest = append(rest, verify.NewCommandVerifier(c, interp, script))
+				}
+				// A genuinely unknown check (not command:*) is ignored, as before, so
+				// the species still gets the gates it can run.
 			}
 		}
 		return verify.NewGate(limits, rest...)
+	}
+}
+
+// blockedVerifier is the verifier wired for a command: check whose script exec is
+// denied by the trust gate (an unreviewed user species). It FAILS the gate with a
+// clear reason — a denied verifier must skip the diff, never silently pass it.
+type blockedVerifier struct {
+	name    string
+	species string
+}
+
+func (b blockedVerifier) Verify(context.Context, engine.ProposedDiff, engine.Scope) engine.VerifyResult {
+	return engine.VerifyResult{
+		Passed: false,
+		Checks: []engine.CheckResult{{
+			Name:   b.name,
+			Passed: false,
+			Detail: fmt.Sprintf("species %q uses a command verifier and is not yet trusted to run its script (review it once with `ant review` to allow exec)", b.species),
+		}},
 	}
 }
 

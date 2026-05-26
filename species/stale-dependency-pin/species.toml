@@ -1,0 +1,31 @@
+name        = "stale-dependency-pin"
+description = "Normalizes duplicated/conflicting dependency pins (a require listed more than once in go.mod)"
+severity    = "low"
+languages   = ["go"]
+auto_apply  = false
+enabled     = true
+
+# Detects a dependency PIN that is duplicated within go.mod — the same module
+# path required on more than one line (a stale/leftover pin from a merge or an
+# edit). Cross-line analysis ast-grep cannot do (it matches within one file's AST
+# but has no model of "this module path appears twice"). The script flags every
+# duplicate occurrence AFTER the first; the deterministic delete-match fix removes
+# the redundant require line; the command: verifier proves `go build`/`go vet`
+# still pass (the kept pin is sufficient) — the "install + tests:affected" gate
+# for Go, hermetic & offline because the fixture module has no external deps.
+#
+# Cleanup-scoped (remove the redundant pin / normalize), NOT version-bump
+# management — that is Renovate's lane. Propose-only.
+
+[detector]
+kind        = "command"
+script      = "detect.sh"
+interpreter = "sh"
+
+[fix]
+kind      = "deterministic"
+transform = "delete-match"
+
+[verify]
+checks      = ["command:verify.sh", "detector-clears"]
+interpreter = "sh"

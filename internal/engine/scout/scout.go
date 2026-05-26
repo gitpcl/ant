@@ -62,6 +62,19 @@ func Run(ctx context.Context, bus *events.Bus, opts Options) (Result, error) {
 
 	detectors := filterDetectors(opts.Detectors, opts.AntFilter)
 
+	// SECURITY invariant (Sprint 020, defense-in-depth): scout is the read-only
+	// pass and does NOT consult the per-species trust resolver, so it must admit
+	// ONLY scan-safe detectors — those that run no species-supplied script (the
+	// vetted ast-grep adapter). A `command` detector would exec a species script
+	// at scan time, bypassing the ScriptExecAllowed trust gate that lives on the
+	// `ant fix` path; if a future change ever routes a command/unvetted detector
+	// into scout, this guard FAILS LOUD (operational error → exit 2) rather than
+	// letting an unvetted script run silently. Today detect.Builtins only yields
+	// ast-grep detectors, so this never trips — it is a guardrail on the invariant.
+	if err := assertScanSafe(detectors); err != nil {
+		return Result{}, err
+	}
+
 	bus.Publish(events.Event{
 		Type:     events.TypeRunStart,
 		RunStart: &events.RunStartPayload{RunID: runID, Scope: opts.Scope},
@@ -108,6 +121,23 @@ func Run(ctx context.Context, bus *events.Bus, opts Options) (Result, error) {
 	})
 
 	return Result{RunID: runID, Findings: findings, HighestSeverity: highest}, nil
+}
+
+// assertScanSafe enforces the scout invariant: every detector on the read-only
+// scan path must be scan-safe (engine.ScanSafeDetector with ScanSafe()==true),
+// i.e. it runs no species-supplied script. A detector that is not scan-safe (the
+// `command` script-escape-hatch detector, or any future unvetted detector) is
+// rejected with an operational error (exit code 2) NAMING the offending species —
+// so the bypass can never happen silently. It checks the engine INTERFACE, not a
+// concrete detect-package type, keeping scout's interface-only boundary intact.
+func assertScanSafe(detectors []engine.NamedDetector) error {
+	for _, d := range detectors {
+		safe, ok := d.Detector.(engine.ScanSafeDetector)
+		if !ok || !safe.ScanSafe() {
+			return fmt.Errorf("%w: scout admits only built-in scan-safe detectors; species %q uses a detector that runs a script at scan time and must not run on the read-only scout path", engine.ErrOperational, d.Species)
+		}
+	}
+	return nil
 }
 
 // filterDetectors keeps only detectors whose species is in the filter. An empty

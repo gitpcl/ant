@@ -43,6 +43,21 @@
 // .harness/progress_log.md Sprint-019 ENGINE-GAP #1). The fifth, todo-expired, is
 // REPORT-ONLY and ships DISABLED by default (enabled=false): it flags stale
 // TODO/FIXME/HACK markers via scout and proposes no fix / no diff.
+//
+// The Sprint 020 P5 dependency/config wave adds four propose-only (auto_apply=
+// false) species that operate on NON-SOURCE files — manifests, lockfiles, and CI
+// YAML — via the command-detector + command:-verifier escape hatches (TECHSPEC
+// §4/§5): unused-dependency (SIGNATURE — go.mod requires cross-referenced against
+// used imports; remove the unimported require, gated by a `go build`/`go vet`
+// command: verifier + detector-clears), stale-dependency-pin (a duplicate/
+// conflicting require; normalize, same Go build/vet gate), dead-config (a config
+// key referenced nowhere in the tree; remove, gated by a config-parse command:
+// verifier that keeps the file parseable), and duplicate-ci-step (a CI step
+// duplicated across jobs; consolidate, gated by a YAML-parse command: verifier).
+// All four are deterministic delete-match removals/normalizations and ship
+// propose-only; unused-dependency notes that high-confidence ecosystems could
+// graduate to auto_apply later. Their fixtures are HERMETIC/offline (isolated
+// zero-dep Go module; pure-stdlib parse scripts) — no network install.
 package builtins
 
 import "embed"
@@ -53,7 +68,7 @@ import "embed"
 // embed.FS paths are always slash-separated and rooted at this directory, so the
 // resolver sees "unused-import/species.toml", etc.
 //
-//go:embed unused-import dead-code unused-variable redundant-conversion unreachable-code empty-block duplicate-condition redundant-nil-check ineffective-assignment formatter-drift import-sort lint-autofix trailing-debug-code n+1-query missing-await nil-deref ai-slop ignored-error unchecked-type-assertion resource-leak missing-context-timeout unsafe-concurrency sql-string-concat deep-nesting long-function magic-number duplicate-code-small todo-expired
+//go:embed unused-import dead-code unused-variable redundant-conversion unreachable-code empty-block duplicate-condition redundant-nil-check ineffective-assignment formatter-drift import-sort lint-autofix trailing-debug-code n+1-query missing-await nil-deref ai-slop ignored-error unchecked-type-assertion resource-leak missing-context-timeout unsafe-concurrency sql-string-concat deep-nesting long-function magic-number duplicate-code-small todo-expired unused-dependency dead-config duplicate-ci-step stale-dependency-pin
 var files embed.FS
 
 // FS returns the embedded built-in species tree as a read-only fs.FS-compatible

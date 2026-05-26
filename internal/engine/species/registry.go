@@ -52,10 +52,20 @@ func NewRegistry() *Registry {
 				return detect.NewASTGrep(species, ruleRef), nil
 			},
 			// command detector adapter is the script escape hatch (TECHSPEC §4
-			// detect/command.go) — its kind is valid and reserved here, but the
-			// adapter itself lands in a later sprint.
+			// detect/command.go, Sprint 020): for cross-file smells ast-grep cannot
+			// express (manifest-deps-vs-imports, orphan CI jobs), it execs a
+			// species-supplied script over the scope and parses its JSON output into
+			// Findings. ruleRef carries the script path; the interpreter defaults to
+			// DefaultScriptInterpreter ("sh") here because the registry holds only the
+			// script path. The composition roots that hold the full manifest
+			// (colony.buildDetector / the fixture harness) build detect.NewCommand
+			// directly with the manifest's declared interpreter PLUS the SCAN-TIME
+			// TRUST GATE. SECURITY: this constructor does NOT gate trust — its callers
+			// build vetted species (loader validation, disk/built-in fixtures); the
+			// untrusted-scan-time gate lives in colony.buildDetector where Origin /
+			// Reviewed state is known.
 			DetectKindCommand: func(species, ruleRef string) (engine.Detector, error) {
-				return nil, fmt.Errorf("species: detector kind %q is valid but not yet wired (script escape hatch lands in a later sprint)", DetectKindCommand)
+				return detect.NewCommand(species, DefaultScriptInterpreter, ruleRef), nil
 			},
 		},
 		fixKinds: map[string]struct{}{

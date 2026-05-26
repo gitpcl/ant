@@ -18,6 +18,13 @@ const (
 	// DetectKindCommand selects the command (script escape-hatch) detector.
 	DetectKindCommand = "command"
 
+	// DefaultScriptInterpreter is the interpreter the command detector / command:
+	// verifier use when a manifest declares no [detector].interpreter /
+	// [verify].interpreter. POSIX "sh" is the portable default; the binary is
+	// resolved from PATH at run time and ALWAYS exec'd in argv form (never via a
+	// shell string), so a script path can never be interpreted as a shell command.
+	DefaultScriptInterpreter = "sh"
+
 	// FixKindDeterministic selects a code-transform fixer with no LLM.
 	FixKindDeterministic = "deterministic"
 	// FixKindLLM selects an LLM-assisted fixer that requires a prompt.
@@ -70,8 +77,14 @@ type Manifest struct {
 type Detect struct {
 	Kind string `toml:"kind"` // ast-grep | command
 	Rule string `toml:"rule"` // rule file (ast-grep) — relative to the species folder
-	// Script is the command to run for kind=command (script escape hatch).
-	Script string `toml:"script"`
+	// Script is the script to run for kind=command (script escape hatch),
+	// relative to the species folder. Interpreter is the interpreter binary that
+	// runs it (argv form: <interpreter> <script> <scope-root>) — resolved from
+	// PATH at scan time, NEVER via a shell. Empty Interpreter defaults to "sh"
+	// (POSIX shell) so a portable detect.sh needs no override; a species may set
+	// "bash"/"python3"/etc. Required-field rules live in the loader.
+	Script      string `toml:"script"`
+	Interpreter string `toml:"interpreter"`
 }
 
 // Fix is the [fix] section: the fix strategy and its parameters (TECHSPEC §6.2).
@@ -108,6 +121,12 @@ type Fix struct {
 type Verify struct {
 	Checks []string `toml:"checks"`
 	Tool   ToolRef  `toml:"tool"`
+	// Interpreter is the interpreter binary that runs every "command:<script>"
+	// check in Checks (argv form: <interpreter> <script>, run in the scratch
+	// copy's root) — resolved from PATH at verify time, NEVER via a shell. Empty
+	// defaults to "sh"; a species may set "bash"/"python3"/etc. One interpreter
+	// covers all command: checks a species declares (they share a language).
+	Interpreter string `toml:"interpreter"`
 }
 
 // ToolRef is the [verify.tool] section: the command + args the

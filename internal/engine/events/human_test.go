@@ -68,6 +68,67 @@ func TestRenderHumanListsFindings(t *testing.T) {
 	}
 }
 
+// TestRenderHumanSanitizesControlChars is the Sprint-020 LOW fix (defense-in-
+// depth): a `command` detector controls Message/Snippet, so a malicious species
+// could inject ANSI/terminal-escape sequences. The human renderer must strip
+// control chars (ESC, CR, NUL, BEL) before the TTY write while PRESERVING \n/\t.
+// The --json path is intentionally NOT covered here (json.NewEncoder escapes
+// control bytes already) — this is terminal-render only.
+func TestRenderHumanSanitizesControlChars(t *testing.T) {
+	// Message carries an ANSI color-reset escape + a CR + a NUL + a BEL; Snippet
+	// carries an ANSI clear-screen. Tab inside the message must survive.
+	f := engine.Finding{
+		Species:  "unused-dependency",
+		File:     "go.mod",
+		Span:     engine.Span{StartLine: 5, StartCol: 1},
+		Severity: engine.SeverityMedium,
+		Message:  "dep \x1b[31mEVIL\x1b[0m\runimported\x00\acol\tumn",
+		Snippet:  "require \x1b[2Jx v1",
+	}
+	out := renderEvents(t, true,
+		Event{Type: TypeRunStart, RunStart: &RunStartPayload{RunID: "r", Scope: engine.Scope{Root: "."}}},
+		Event{Type: TypeDetectFinding, DetectFinding: &DetectFindingPayload{RunID: "r", Finding: f}},
+		Event{Type: TypeRunEnd, RunEnd: &RunEndPayload{RunID: "r", Findings: 1, HighestSeverity: "medium"}},
+	)
+
+	// No control bytes (ESC/CR/NUL/BEL) survive in the rendered output.
+	for _, bad := range []struct {
+		name string
+		b    byte
+	}{{"ESC", 0x1b}, {"CR", 0x0d}, {"NUL", 0x00}, {"BEL", 0x07}} {
+		if strings.IndexByte(out, bad.b) >= 0 {
+			t.Errorf("rendered output still contains a %s control byte (terminal-escape injection not stripped):\n%q", bad.name, out)
+		}
+	}
+
+	// The visible text survives with control chars removed; tab is preserved.
+	if !strings.Contains(out, "dep [31mEVIL[0munimportedcol\tumn") {
+		t.Errorf("sanitized message text/tab not preserved as expected:\n%q", out)
+	}
+	if !strings.Contains(out, "require [2Jx v1") {
+		t.Errorf("sanitized snippet not preserved as expected:\n%q", out)
+	}
+}
+
+// TestSanitizeControl unit-tests the helper directly: control chars stripped,
+// \n/\t and printable/UTF-8 preserved, and the no-control fast path returns the
+// input unchanged.
+func TestSanitizeControl(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"plain text", "plain text"},               // fast path, unchanged
+		{"a\x1b[0mb", "a[0mb"},                     // ESC stripped, rest kept
+		{"a\rb\x00c\ad", "abcd"},                   // CR, NUL, BEL stripped
+		{"line1\nline2\tcol", "line1\nline2\tcol"}, // \n and \t preserved
+		{"héllo → 世界", "héllo → 世界"},               // multi-byte UTF-8 untouched
+		{"\x7fdel", "del"},                         // DEL stripped
+	}
+	for _, c := range cases {
+		if got := sanitizeControl(c.in); got != c.want {
+			t.Errorf("sanitizeControl(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 // TestRenderHumanSurfacesSkip proves a skip is visible in human/TUI output: the
 // file, the failing verifier gate, and the reason all appear. A skip is a trust
 // signal, never swallowed (PRD §6.3) — the human renderer must show it just as

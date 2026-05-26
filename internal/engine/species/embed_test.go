@@ -50,6 +50,14 @@ var adr0002 = map[string]struct {
 	// the row is {FixKindDeterministic, auto_apply=false, enabled=false} — the
 	// disabled, propose-only, report-only posture.
 	"todo-expired": {FixKindDeterministic, false, false},
+	// Sprint 020 P5 dependency/config: four propose-only (auto_apply=false)
+	// deterministic species that operate on non-source files (go.mod, config.json,
+	// CI YAML) via the command-detector + command:-verifier escape hatches. Their
+	// fix is a delete-match removal/normalization; they ship enabled, propose-only.
+	"unused-dependency":    {FixKindDeterministic, false, true},
+	"stale-dependency-pin": {FixKindDeterministic, false, true},
+	"dead-config":          {FixKindDeterministic, false, true},
+	"duplicate-ci-step":    {FixKindDeterministic, false, true},
 }
 
 // TestEmbed_BuiltinsDiscoverableNoDisk is the core feature-3 assertion: the

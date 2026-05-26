@@ -252,6 +252,60 @@ func cases() []fixture.Case {
 			GoldenPath: filepath.Join("testdata", "ai-slop", "fix.golden"),
 			Fixer:      fixture.RecordedFixer(engine.FileDiff{Path: "repo.go", Patch: aiSlopPatch}),
 		},
+		{
+			// unused-dependency is the Sprint 020 SIGNATURE deps species and the FIRST
+			// command-detector + command:-verifier species. The detector (detect.sh)
+			// cross-references go.mod requires vs the imports used across the tree —
+			// analysis ast-grep cannot do — and flags `rsc.io/quote`, which the fixture
+			// declares but never imports. The deterministic delete-match fix removes the
+			// require line; the command: verifier (verify.sh) runs `go build`/`go vet`
+			// on the scratch copy to prove the module still compiles offline with NO
+			// external dependency, then detector-clears confirms the require is gone.
+			// Propose-only (auto_apply=false). Hermetic: the post-fix module has only a
+			// stdlib import, so the gate resolves entirely offline.
+			Name:       "unused-dependency",
+			SpeciesDir: filepath.Join(speciesRoot, "unused-dependency"),
+			RepoDir:    filepath.Join("testdata", "unused-dependency", "repo"),
+			GoldenPath: filepath.Join("testdata", "unused-dependency", "fix.golden"),
+		},
+		{
+			// stale-dependency-pin (Sprint 020 deps): the command detector flags a
+			// require duplicated in go.mod (the same module pinned twice); the
+			// deterministic delete-match fix removes the redundant require line; the
+			// command: verifier runs `go build`/`go vet` on the scratch copy to prove
+			// the kept pin is sufficient, then detector-clears confirms the duplicate is
+			// gone. Hermetic: the module imports only stdlib, so the gate is offline.
+			Name:       "stale-dependency-pin",
+			SpeciesDir: filepath.Join(speciesRoot, "stale-dependency-pin"),
+			RepoDir:    filepath.Join("testdata", "stale-dependency-pin", "repo"),
+			GoldenPath: filepath.Join("testdata", "stale-dependency-pin", "fix.golden"),
+		},
+		{
+			// dead-config (Sprint 020 deps): the command detector flags a config.json
+			// key referenced nowhere in the tree (an orphan); the deterministic
+			// delete-match fix removes the key line (its trailing comma goes with it, so
+			// the JSON stays valid); the command: verifier PARSES config.json (python3
+			// json.load) to prove it is still valid JSON. RequiredTools=[python3] so CI
+			// without python3 skips, exactly as ast-grep species skip without ast-grep.
+			Name:          "dead-config",
+			SpeciesDir:    filepath.Join(speciesRoot, "dead-config"),
+			RepoDir:       filepath.Join("testdata", "dead-config", "repo"),
+			GoldenPath:    filepath.Join("testdata", "dead-config", "fix.golden"),
+			RequiredTools: []string{"python3"},
+		},
+		{
+			// duplicate-ci-step (Sprint 020 deps): the command detector flags a `- run:`
+			// step duplicated across jobs in .github/workflows/ci.yml; the deterministic
+			// delete-match fix removes the duplicate step line; the command: verifier
+			// runs a pure-stdlib YAML structural lint (python3) to prove the workflow
+			// stays parseable (no tabs, even indentation, no emptied `steps:`).
+			// RequiredTools=[python3] gates the case on python3 like dead-config.
+			Name:          "duplicate-ci-step",
+			SpeciesDir:    filepath.Join(speciesRoot, "duplicate-ci-step"),
+			RepoDir:       filepath.Join("testdata", "duplicate-ci-step", "repo"),
+			GoldenPath:    filepath.Join("testdata", "duplicate-ci-step", "fix.golden"),
+			RequiredTools: []string{"python3"},
+		},
 	}
 }
 

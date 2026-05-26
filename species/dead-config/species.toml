@@ -1,0 +1,32 @@
+name        = "dead-config"
+description = "Removes config entries that are referenced nowhere in the codebase (keeps the config parseable)"
+severity    = "low"
+languages   = ["json"]
+auto_apply  = false
+enabled     = true
+
+# Detects a config KEY declared in a tool config (here: a JSON config) whose name
+# is referenced NOWHERE else in the tree — an orphan/stale entry left behind after
+# the code that consumed it was removed. Cross-file analysis ast-grep cannot do
+# (config key here, references scattered across source). The script flags each
+# orphan key line; the deterministic delete-match fix removes it; the command:
+# verifier PARSES the post-fix config to prove it stays valid JSON (the config-
+# parse gate the contract requires) — a removal that broke the JSON would fail the
+# gate and be skipped.
+#
+# Propose-only (auto_apply=false): high-value but risky cleanup — a key may be
+# read reflectively/dynamically, so a human confirms every removal.
+
+[detector]
+kind        = "command"
+script      = "detect.sh"
+interpreter = "sh"
+
+[fix]
+kind      = "deterministic"
+transform = "delete-match"
+
+# The config-parse command: verifier keeps the file PARSEABLE after removal.
+[verify]
+checks      = ["command:verify.sh"]
+interpreter = "sh"

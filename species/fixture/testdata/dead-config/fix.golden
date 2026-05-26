@@ -1,0 +1,4 @@
+--- a/config.json
++++ b/config.json
+@@ -2,1 +2,0 @@
+-  "deadFeatureFlag": true,
