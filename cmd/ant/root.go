@@ -88,6 +88,7 @@ func newRootCmd() *cobra.Command {
 		newInitCmd(),
 		newDoctorCmd(),
 		newExplainCmd(),
+		newUpdateCmd(),
 		speciesCmd(),
 	)
 	return root
