@@ -19,6 +19,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gitpcl/ant/internal/engine"
 	"github.com/gitpcl/ant/internal/engine/events"
+	"github.com/gitpcl/ant/internal/engine/species"
 	"github.com/gitpcl/ant/internal/engine/stage"
 )
 
@@ -45,7 +46,14 @@ type Options struct {
 //
 // store is the staging source (stage.Area over the Store); marker persists marks
 // (normally the same Area). w is where the TUI renders (stdout for a TTY).
-func Run(ctx context.Context, w io.Writer, area *stage.Area, opts Options) error {
+//
+// It returns a species.ReviewOutcome describing whether the pass was a real
+// human review (an explicit accept/skip OR reaching end-of-review). The CLI
+// passes this outcome to the trust authority (species.MarkReviewedAfter) so the
+// freshly-installed propose-only override lifts ONLY on a genuine review, not
+// merely because Run returned (Sprint 022 Finding 6). The empty-state and
+// missing-run paths return the zero outcome (no review happened).
+func Run(ctx context.Context, w io.Writer, area *stage.Area, opts Options) (species.ReviewOutcome, error) {
 	records, err := area.ListRecords()
 	if err != nil {
 		// A missing run is "nothing to review", not an operational failure: the
@@ -54,9 +62,9 @@ func Run(ctx context.Context, w io.Writer, area *stage.Area, opts Options) error
 		if errors.Is(err, engine.ErrRunNotFound) {
 			m := newModel(nil, opts.RunID, nil, opts.Ascii, opts.Color)
 			_, werr := io.WriteString(w, m.emptyView())
-			return werr
+			return species.ReviewOutcome{}, werr
 		}
-		return fmt.Errorf("%w: load staged diffs for review: %v", engine.ErrOperational, err)
+		return species.ReviewOutcome{}, fmt.Errorf("%w: load staged diffs for review: %v", engine.ErrOperational, err)
 	}
 
 	marker := opts.Marker
@@ -69,12 +77,24 @@ func Run(ctx context.Context, w io.Writer, area *stage.Area, opts Options) error
 		// No walk — print the static empty-state screen and exit 0
 		// (review-interaction.md §5.1). No TUI program for the empty case.
 		_, werr := io.WriteString(w, m.emptyView())
-		return werr
+		return species.ReviewOutcome{}, werr
 	}
 
 	prog := tea.NewProgram(m, tea.WithOutput(w), tea.WithContext(ctx))
-	_, rerr := prog.Run()
-	return rerr
+	final, rerr := prog.Run()
+	out := species.ReviewOutcome{}
+	if fm, ok := final.(model); ok {
+		out = fm.outcome()
+	}
+	return out, rerr
+}
+
+// outcome reports what this review pass did, for the Sprint-022 trust lift. A
+// pass counts as a real review when the reviewer made at least one explicit
+// accept/skip decision OR walked to the end-of-review screen; both are tracked
+// stickily on the model so quitting after the fact does not erase the signal.
+func (m model) outcome() species.ReviewOutcome {
+	return species.ReviewOutcome{Decided: m.decided, ReachedEnd: m.reachedEnd}
 }
 
 // phase is the review session's screen state (review-interaction.md §8).
@@ -113,6 +133,16 @@ type model struct {
 	showHelp bool // ? help overlay
 	scroll   int  // diff scroll offset (expanded)
 	phase    phase
+
+	// decided / reachedEnd are STICKY records of whether this pass was a real
+	// human review, fed into the Sprint-022 trust lift (species.ReviewOutcome).
+	// decided flips true on the first explicit accept/skip; reachedEnd flips true
+	// the first time the walk passes the last item onto the End screen. They are
+	// sticky (never reset by p/return-to-walk) so the final model faithfully
+	// reports what the whole session did. A pass that opens and quits with neither
+	// set is a no-op that must NOT lift a third-party species' propose-only override.
+	decided    bool
+	reachedEnd bool
 }
 
 // compile-time assertion that model satisfies tea.Model.
@@ -230,6 +260,7 @@ func (m model) updateConfirmQuit(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		for i := range m.items {
 			if m.items[i].mark == engine.MarkPending {
 				m.items[i].mark = engine.MarkAccepted
+				m.decided = true // bulk accept is still an explicit human decision
 				_ = m.marker.Mark(i, engine.MarkAccepted)
 			}
 		}
@@ -259,6 +290,7 @@ func (m model) decide(mark engine.Mark) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.items[m.cursor].mark = mark
+	m.decided = true // an explicit accept/skip — this pass is a real review
 	if err := m.marker.Mark(m.cursor, mark); err != nil {
 		// Persistence failure is surfaced by leaving the in-memory mark but not
 		// crashing the TUI; the next apply re-reads the Store, which is the
@@ -277,6 +309,7 @@ func (m model) advance() model {
 		return m
 	}
 	m.phase = phaseEnd
+	m.reachedEnd = true // walked past the last item — a deliberate full pass
 	return m
 }
 

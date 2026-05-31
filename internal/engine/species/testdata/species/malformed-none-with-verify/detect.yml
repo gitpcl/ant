@@ -1,0 +1,6 @@
+# Rule stub so the loader's referenced-file check passes; the manifest is
+# rejected for declaring [verify].checks on a report-only (none) species.
+id: bad-report-only
+language: go
+rule:
+  pattern: panic($MSG)

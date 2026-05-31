@@ -43,6 +43,10 @@ test('scout fixture (the Go golden) parses into the expected typed events', () =
   const start = ofType(events, 'run.start');
   assert.equal(start.runStart.runId, 'golden-run');
   assert.equal(start.runStart.scope.root, 'testdata/has-findings');
+  // The --json contract carries a machine-readable schema version on run.start
+  // (events.SchemaVersion). The front doors read it at stream open to detect a
+  // breaking change; pin the baseline here in lockstep with the Go golden.
+  assert.equal(start.runStart.schemaVersion, '1');
 
   const first = ofType(events, 'detect.finding');
   const f = first.detectFinding.finding;

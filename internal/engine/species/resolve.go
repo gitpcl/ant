@@ -45,6 +45,14 @@ type Resolved struct {
 	EffectiveEnabled   bool
 }
 
+// Capabilities returns the resolved species' capability metadata (requires_exec
+// / requires_network / requires_tool / report_only) with explicit manifest
+// values applied over the inferred defaults (Sprint 022 Future-Proofing #3). It
+// delegates to Manifest.Capabilities so commands (`ant doctor`, `ant species
+// validate`) and the capability-matrix doc read capabilities off the resolved
+// species without reaching into the raw kinds.
+func (r Resolved) Capabilities() Capabilities { return r.Manifest.Capabilities() }
+
 // Resolver discovers and merges species from the embedded built-in tree and the
 // on-disk user tree, then layers the ant.toml overrides on top. It owns the
 // shadowing rule (user species override same-named built-ins) and the effective

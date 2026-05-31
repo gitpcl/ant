@@ -266,6 +266,87 @@ func TestScriptExecTrust_IndependentOfAutoApply(t *testing.T) {
 	}
 }
 
+// ---- Sprint 022 Finding 6: strict trust lift (SECURITY) ----
+
+// TestMarkReviewedAfter_GatedByDecision is the strict-trust-lift test (Sprint 022
+// Finding 6). The freshly-installed propose-only override — which also gates a
+// third-party command-detector species' scan-time script exec (ScriptExecTrust)
+// — must lift ONLY when an `ant review` pass was a REAL human review: an explicit
+// accept/skip decision OR reaching end-of-review. A pass that decided nothing and
+// never reached the end (e.g. opened then quit on the first item) must NOT lift
+// it, even though review.Run returned. Trust is earned by an explicit human
+// check, aligning with the Sprint 011 trust model.
+func TestMarkReviewedAfter_GatedByDecision(t *testing.T) {
+	const name = "third-party-command" // a freshly-installed command-detector species
+
+	// freshlyInstalled re-derives whether the override still holds this user
+	// species propose-only / scan-exec-blocked from the store's persisted state.
+	freshlyInstalled := func(store *fakeTrustStore) bool {
+		r := Resolved{Manifest: Manifest{Name: name}, Origin: OriginUser, EffectiveAutoApply: true}
+		// Blocked from scan-time exec == override still active.
+		return !ScriptExecTrust(r, store.state[name])
+	}
+
+	t.Run("no-decision pass does NOT lift", func(t *testing.T) {
+		store := &fakeTrustStore{state: map[string]TrustState{name: {}}}
+		// A pass that made no accept/skip and never reached end-of-review.
+		noDecision := ReviewOutcome{}
+		if noDecision.LiftsTrust() {
+			t.Fatal("a no-decision, never-reached-end outcome must NOT qualify as a review")
+		}
+		if err := MarkReviewedAfter(store, noDecision, name); err != nil {
+			t.Fatalf("MarkReviewedAfter: %v", err)
+		}
+		if store.state[name].Reviewed {
+			t.Fatal("a no-decision pass must NOT mark the species reviewed — trust must not lift just because review.Run returned")
+		}
+		if !freshlyInstalled(store) {
+			t.Fatal("after a no-decision pass the override must STILL hold the third-party command species (scan-exec blocked)")
+		}
+	})
+
+	t.Run("explicit accept/skip decision DOES lift", func(t *testing.T) {
+		store := &fakeTrustStore{state: map[string]TrustState{name: {}}}
+		decided := ReviewOutcome{Decided: true}
+		if !decided.LiftsTrust() {
+			t.Fatal("an explicit accept/skip decision must qualify as a review")
+		}
+		if err := MarkReviewedAfter(store, decided, name); err != nil {
+			t.Fatalf("MarkReviewedAfter: %v", err)
+		}
+		if !store.state[name].Reviewed {
+			t.Fatal("an explicit decision must mark the species reviewed")
+		}
+		if freshlyInstalled(store) {
+			t.Fatal("after an explicit-decision review the override must lift (scan-exec now allowed)")
+		}
+	})
+
+	t.Run("reaching end-of-review DOES lift", func(t *testing.T) {
+		store := &fakeTrustStore{state: map[string]TrustState{name: {}}}
+		ended := ReviewOutcome{ReachedEnd: true}
+		if !ended.LiftsTrust() {
+			t.Fatal("reaching end-of-review must qualify as a review")
+		}
+		if err := MarkReviewedAfter(store, ended, name); err != nil {
+			t.Fatalf("MarkReviewedAfter: %v", err)
+		}
+		if !store.state[name].Reviewed {
+			t.Fatal("reaching end-of-review must mark the species reviewed")
+		}
+	})
+
+	t.Run("nil store and empty names are safe no-ops", func(t *testing.T) {
+		if err := MarkReviewedAfter(nil, ReviewOutcome{Decided: true}, name); err != nil {
+			t.Fatalf("nil store should be a no-op, got %v", err)
+		}
+		store := &fakeTrustStore{state: map[string]TrustState{}}
+		if err := MarkReviewedAfter(store, ReviewOutcome{Decided: true}); err != nil {
+			t.Fatalf("empty names should be a no-op, got %v", err)
+		}
+	})
+}
+
 // TestResolveTrust_PopulatesScriptExecAllowed: ResolveTrust threads the exec gate
 // onto each TrustDecision so the colony reads a single boolean.
 func TestResolveTrust_PopulatesScriptExecAllowed(t *testing.T) {

@@ -1,0 +1,15 @@
+# Detector rule for the report-only-fixture species (REPORT-ONLY, Sprint 022).
+#
+# Smell: a bare `panic(...)` call in application code — a triage signal a team
+# may want surfaced (it aborts the process rather than returning an error). This
+# is a deliberately simple, unambiguous ast-grep match so the fixture proves the
+# report-only PIPELINE (detect → report, no fix), not detection subtlety.
+#
+# REPORT-ONLY: this species proposes NO fix and changes NO code (fix.kind=none).
+# It is surfaced through `ant scout`, which never writes the working tree.
+id: report-only-fixture
+language: go
+severity: warning
+message: 'panic() call — triage: prefer returning an error to aborting the process'
+rule:
+  pattern: panic($MSG)

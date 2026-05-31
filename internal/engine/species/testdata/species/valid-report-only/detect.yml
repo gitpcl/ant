@@ -1,0 +1,7 @@
+# Minimal ast-grep rule stub for the report-only sample species. It only needs
+# to exist so the loader's "referenced files must exist" check passes; the
+# report-only contract is exercised by the fixture harness, not this rule body.
+id: report-only-sample
+language: go
+rule:
+  pattern: panic($MSG)

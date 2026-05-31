@@ -1,0 +1,13 @@
+name        = "multi-problem"
+description = "Carries SEVERAL independent §6.2 violations at once so `ant species validate` can prove it reports them all in one pass rather than stopping at the first: an invalid severity, a missing detect rule file, an llm fix with no prompt, and an unknown verify check."
+severity    = "catastrophic"
+
+[detector]
+kind = "ast-grep"
+rule = "nope.yml"
+
+[fix]
+kind = "llm"
+
+[verify]
+checks = ["compile", "not-a-real-check"]

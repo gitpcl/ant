@@ -213,6 +213,54 @@ func TestLandPathEscapeRefused(t *testing.T) {
 	}
 }
 
+// TestLandPreflightAbortsCleanly asserts the all-or-nothing contract: a batch
+// containing one un-appliable record fails in preflight BEFORE any branch or
+// commit is created, so the repo is left exactly as it was — no new branch, no
+// new commit, no working-tree write (Sprint 022 Finding 5).
+func TestLandPreflightAbortsCleanly(t *testing.T) {
+	root := fixtureRepo(t)
+	repo, _ := git.PlainOpen(root)
+	headBefore, _ := repo.Head()
+
+	good := deleteImportRecord(engine.MarkAccepted)
+	// A record whose patch's context will never match the source: it claims to
+	// delete a line that does not exist in main.go, so applyUnifiedPatch fails.
+	bad := deleteImportRecord(engine.MarkAccepted)
+	bad.Diff.Files[0].Patch = "--- a/main.go\n+++ b/main.go\n@@ -1,1 +1,0 @@\n-this line is not in the file\n"
+
+	bus := events.NewBus()
+	res, err := Land(context.Background(), bus, "run-pre",
+		[]engine.StagedRecord{good, bad},
+		Options{Root: root, Now: fixedClock()})
+	bus.Close()
+
+	if err == nil {
+		t.Fatal("a batch with an un-appliable patch must fail in preflight")
+	}
+	if !isOperational(err) {
+		t.Errorf("preflight failure should be operational (exit 2): %v", err)
+	}
+	if res.Branch != "" || len(res.Commits) != 0 {
+		t.Errorf("preflight abort must create NO branch and NO commit, got %+v", res)
+	}
+
+	// No branch was created.
+	if _, err := repo.Reference(plumbing.NewBranchReferenceName("ant/fix-run-pre"), false); err == nil {
+		t.Error("preflight abort must not create the apply branch")
+	}
+	// HEAD is unchanged (no commit landed).
+	headAfter, _ := repo.Head()
+	if headAfter.Name() != headBefore.Name() || headAfter.Hash() != headBefore.Hash() {
+		t.Errorf("HEAD moved despite preflight abort: before %s@%s after %s@%s",
+			headBefore.Name(), headBefore.Hash(), headAfter.Name(), headAfter.Hash())
+	}
+	// The working tree was not written (the good patch was never applied).
+	got, _ := os.ReadFile(filepath.Join(root, "main.go"))
+	if want := "package main\n\nimport \"fmt\"\n\nfunc main() {}\n"; string(got) != want {
+		t.Errorf("working tree was modified despite preflight abort:\n got %q\nwant %q", got, want)
+	}
+}
+
 // isOperational reports whether err wraps engine.ErrOperational (exit 2).
 func isOperational(err error) bool {
 	return errors.Is(err, engine.ErrOperational)

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gitpcl/ant/internal/engine"
+	store "github.com/gitpcl/ant/internal/engine/store"
 )
 
 // runCmd builds the command tree, captures stdout+stderr, runs it against args,
@@ -29,7 +30,7 @@ func TestHelpListsEveryCommand(t *testing.T) {
 		t.Errorf("--help exit = %d, want 0", code)
 	}
 	// Every command from TECHSPEC §7 must appear in help.
-	for _, cmd := range []string{"scout", "fix", "review", "apply", "init", "species"} {
+	for _, cmd := range []string{"scout", "fix", "review", "apply", "init", "doctor", "explain", "species"} {
 		if !strings.Contains(out, cmd) {
 			t.Errorf("--help missing command %q:\n%s", cmd, out)
 		}
@@ -253,5 +254,149 @@ func TestBareAntAndScoutShareTheSamePath(t *testing.T) {
 	_, scoutCode := runCmd(t, "scout", "/nonexistent-scope-path-xyz")
 	if bareCode != scoutCode {
 		t.Errorf("bare ant (%d) and scout (%d) diverged; they must share the scout path", bareCode, scoutCode)
+	}
+}
+
+func TestDoctorJSONEmitsReportAndCIExitCode(t *testing.T) {
+	// `ant doctor --json` against a temp dir with no ant.toml emits the
+	// single-document report (top-level "ready" + "checks"). The exit code is
+	// CI-correct: 0 when the required capabilities are present, 2 (operational)
+	// when a required tool is missing. We assert the contract fields are present
+	// and that the exit code agrees with the rendered "ready" value — the CLI is
+	// a thin renderer over the engine's Report (TECHSPEC §3), so we do not pin
+	// which tools happen to be installed on the test host.
+	dir := t.TempDir()
+	out, code := runCmd(t, "doctor", dir, "--json")
+
+	for _, field := range []string{`"ready"`, `"checks"`, `"name"`, `"status"`, `"required"`, `"detail"`} {
+		if !strings.Contains(out, field) {
+			t.Errorf("doctor --json missing field %s:\n%s", field, out)
+		}
+	}
+	ready := strings.Contains(out, `"ready": true`)
+	if ready && code != engine.ExitOK {
+		t.Errorf("doctor reported ready but exit = %d, want 0", code)
+	}
+	if !ready && code != engine.ExitOperational {
+		t.Errorf("doctor reported not-ready but exit = %d, want %d", code, engine.ExitOperational)
+	}
+}
+
+// TestExplainResolvesRunAndFinding drives `ant explain` through the front door
+// against a real seeded local store: a run reference and a `<runID>#<index>`
+// finding reference both render with --json, and a missing run is the CI-correct
+// operational exit (2). The CLI is a thin renderer over the engine's Detail
+// (TECHSPEC §3), so the assertions pin the contract shape, not the engine logic
+// (covered by internal/engine/explain).
+func TestExplainResolvesRunAndFinding(t *testing.T) {
+	dir := t.TempDir()
+	run := engine.Run{
+		ID:        "fix-explain-test",
+		StartedAt: "2026-05-31T10:00:00Z",
+		Scope:     engine.Scope{Root: "."},
+		Findings: []engine.Finding{{
+			Species:  "unused-import",
+			File:     "main.go",
+			Span:     engine.Span{StartLine: 3, StartCol: 1, EndLine: 3, EndCol: 12},
+			Severity: engine.SeverityLow,
+			Message:  "unused import",
+		}},
+	}
+	if err := store.New(dir).SaveRun(run); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+
+	// Run reference, --json.
+	out, code := runCmd(t, "explain", run.ID, "--path", dir, "--json")
+	if code != engine.ExitOK {
+		t.Fatalf("explain run exit = %d, want 0:\n%s", code, out)
+	}
+	for _, field := range []string{`"kind": "run"`, `"runId"`, `"findings"`} {
+		if !strings.Contains(out, field) {
+			t.Errorf("explain run --json missing %s:\n%s", field, out)
+		}
+	}
+
+	// Finding reference, --json.
+	out, code = runCmd(t, "explain", run.ID+"#0", "--path", dir, "--json")
+	if code != engine.ExitOK {
+		t.Fatalf("explain finding exit = %d, want 0:\n%s", code, out)
+	}
+	if !strings.Contains(out, `"kind": "finding"`) || !strings.Contains(out, "unused-import") {
+		t.Errorf("explain finding --json missing finding detail:\n%s", out)
+	}
+
+	// Missing run is operational (exit 2).
+	_, code = runCmd(t, "explain", "no-such-run", "--path", dir)
+	if code != engine.ExitOperational {
+		t.Errorf("explain missing run exit = %d, want %d", code, engine.ExitOperational)
+	}
+}
+
+// TestSpeciesValidateThroughFrontDoor drives `ant species validate` end to end:
+// a well-formed local folder validates with exit 0 and a JSON report, and a
+// malformed one exits 2 (operational, CI-correct) with the problem rendered. The
+// CLI is a thin renderer over species.Validate (TECHSPEC §3), so the assertions
+// pin the contract shape + exit code, not the rule logic (covered by
+// internal/engine/species).
+func TestSpeciesValidateThroughFrontDoor(t *testing.T) {
+	// Valid folder: an ast-grep deterministic species with its rule file present.
+	valid := t.TempDir()
+	writeFile(t, filepath.Join(valid, "species.toml"), `name = "frontdoor-valid"
+severity = "low"
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+[fix]
+kind = "deterministic"
+transform = "delete-match"
+[verify]
+checks = ["compile"]
+`)
+	writeFile(t, filepath.Join(valid, "detect.yml"), "id: frontdoor-valid\n")
+
+	out, code := runCmd(t, "species", "validate", valid, "--json")
+	if code != engine.ExitOK {
+		t.Fatalf("validate valid folder exit = %d, want 0:\n%s", code, out)
+	}
+	for _, field := range []string{`"ok": true`, `"path"`, `"manifest"`, `"capabilities"`} {
+		if !strings.Contains(out, field) {
+			t.Errorf("species validate --json missing %s:\n%s", field, out)
+		}
+	}
+
+	// Invalid folder: the manifest references a detect rule that does not exist,
+	// so validation fails and the command exits operational (2).
+	invalid := t.TempDir()
+	writeFile(t, filepath.Join(invalid, "species.toml"), `name = "frontdoor-invalid"
+severity = "low"
+[detector]
+kind = "ast-grep"
+rule = "missing.yml"
+[fix]
+kind = "deterministic"
+transform = "delete-match"
+[verify]
+checks = ["compile"]
+`)
+
+	out, code = runCmd(t, "species", "validate", invalid)
+	if code != engine.ExitOperational {
+		t.Errorf("validate invalid folder exit = %d, want %d:\n%s", code, engine.ExitOperational, out)
+	}
+	if !strings.Contains(out, "invalid:") || !strings.Contains(out, "file not found") {
+		t.Errorf("species validate did not report the missing rule file:\n%s", out)
+	}
+}
+
+// writeFile writes content to path, creating parent dirs, failing the test on
+// error. A tiny local helper for the species-validate front-door fixtures.
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir for %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
 	}
 }

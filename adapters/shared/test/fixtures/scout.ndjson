@@ -1,4 +1,4 @@
-{"type":"run.start","seq":1,"time":"2026-05-24T12:00:00Z","runStart":{"runId":"golden-run","scope":{"root":"testdata/has-findings"}}}
+{"type":"run.start","seq":1,"time":"2026-05-24T12:00:00Z","runStart":{"runId":"golden-run","schemaVersion":"1","scope":{"root":"testdata/has-findings"}}}
 {"type":"detect.finding","seq":2,"time":"2026-05-24T12:00:00Z","detectFinding":{"runId":"golden-run","finding":{"species":"unused-import","file":"main.go","span":{"startLine":3,"startCol":1,"endLine":3,"endCol":17},"severity":"high","message":"Imported package \"strings\" is never used","snippet":"import \"strings\"","meta":{"ruleId":"unused-import"}}}}
 {"type":"detect.finding","seq":3,"time":"2026-05-24T12:00:00Z","detectFinding":{"runId":"golden-run","finding":{"species":"unused-import","file":"main.go","span":{"startLine":7,"startCol":2,"endLine":7,"endCol":8},"severity":"medium","message":"Variable \"x\" is assigned but never read","snippet":"x := 1","meta":{"ruleId":"dead-code"}}}}
 {"type":"run.end","seq":4,"time":"2026-05-24T12:00:00Z","runEnd":{"runId":"golden-run","findings":2,"verified":0,"skipped":0,"applied":0,"highestSeverity":"high"}}

@@ -799,6 +799,23 @@ func TestTodoExpiredReportOnly(t *testing.T) {
 	}, 3)
 }
 
+// TestReportOnlyFixtureSpecies proves the first-class report-only manifest kind
+// (Sprint 022 Finding 4, fix.kind=none): a dedicated fixture species declared with
+// NO [fix].transform and NO [verify].checks LOADS and VALIDATES through the real
+// production loader/registry (RunDetectOnlyCase calls species.Load) and REPORTS its
+// finding via the scout-equivalent detect-only path WITHOUT writing the working
+// tree (the snapshot-before/after assertion). It deliberately drives no fixer — a
+// report-only species proposes no change. This exercises the none-kind end to end
+// independently of the todo-expired migration (TestTodoExpiredReportOnly covers the
+// migrated built-in).
+func TestReportOnlyFixtureSpecies(t *testing.T) {
+	fixture.RunDetectOnlyCase(t, fixture.Case{
+		Name:       "report-only-fixture",
+		SpeciesDir: filepath.Join("testdata", "report-only-fixture", "species"),
+		RepoDir:    filepath.Join("testdata", "report-only-fixture", "repo"),
+	}, 1)
+}
+
 // TestBuiltinSpeciesFixtures runs the detect→fix→verify→golden harness over each
 // built-in deterministic species with the REAL ast-grep detector, the REAL
 // delete-match fixer, and the REAL compile + detector-clears verifier gate. When

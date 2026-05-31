@@ -39,7 +39,7 @@ func TestRegistry_DetectorUnknownKind(t *testing.T) {
 // loudly naming the bad kind.
 func TestRegistry_FixKinds(t *testing.T) {
 	reg := NewRegistry()
-	for _, k := range []string{FixKindDeterministic, FixKindLLM} {
+	for _, k := range []string{FixKindDeterministic, FixKindLLM, FixKindTool, FixKindNone} {
 		if err := reg.CheckFixKind(k); err != nil {
 			t.Errorf("CheckFixKind(%q) = %v, want nil", k, err)
 		}

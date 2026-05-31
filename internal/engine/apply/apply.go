@@ -71,6 +71,16 @@ func Land(ctx context.Context, bus *events.Bus, runID string, records []engine.S
 		return Result{}, fmt.Errorf("%w: open worktree at %s: %v", engine.ErrOperational, opts.Root, err)
 	}
 
+	// Preflight: dry-apply every record's patch on a scratch (in-memory) tree
+	// BEFORE creating/checking out the branch, so a patch that won't apply
+	// aborts all-or-nothing on a fresh run — no half-created branch, no partial
+	// commits. It reuses the SAME pure patch primitive (applyUnifiedPatch) and
+	// the SAME path-safety check (safeJoin) the real landing uses, so a clean
+	// preflight is a faithful predictor of the real apply (Sprint 022 Finding 5).
+	if err := preflight(opts.Root, records); err != nil {
+		return Result{}, err
+	}
+
 	branch := ""
 	if !opts.NoBranch {
 		branch = opts.BranchName
@@ -101,6 +111,40 @@ func Land(ctx context.Context, bus *events.Bus, runID string, records []engine.S
 		}
 	}
 	return result, nil
+}
+
+// preflight dry-applies every record's patch to an in-memory scratch tree to
+// prove the whole batch applies cleanly before any branch or commit is created.
+// It seeds the scratch tree lazily from disk and feeds each patch result back so
+// chained edits to the same file are validated in apply order, exactly as the
+// real landing would see them. Any failure returns an operational error and the
+// caller creates NO branch and NO commit (all-or-nothing on a fresh run). It
+// performs NO writes and NO git mutation — only the pure applyUnifiedPatch plus
+// the safeJoin path guard the real land also uses, so the two agree.
+func preflight(root string, records []engine.StagedRecord) error {
+	scratch := make(map[string]string) // repo-relative path -> current scratch content
+	for _, rec := range records {
+		for _, fd := range rec.Diff.Files {
+			full, err := safeJoin(root, fd.Path)
+			if err != nil {
+				return err
+			}
+			src, ok := scratch[fd.Path]
+			if !ok {
+				raw, readErr := os.ReadFile(full)
+				if readErr != nil {
+					return fmt.Errorf("%w: preflight read %s for patch: %v", engine.ErrOperational, fd.Path, readErr)
+				}
+				src = string(raw)
+			}
+			patched, err := applyUnifiedPatch(src, fd.Patch)
+			if err != nil {
+				return fmt.Errorf("%w: preflight apply patch to %s: %v", engine.ErrOperational, fd.Path, err)
+			}
+			scratch[fd.Path] = patched
+		}
+	}
+	return nil
 }
 
 // landRecord applies every FileDiff in one staged record to the working tree,

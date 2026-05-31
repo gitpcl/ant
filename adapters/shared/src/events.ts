@@ -83,6 +83,14 @@ export interface Scope {
 /** Payloads mirror the *Payload structs in event.go. */
 export interface RunStartPayload {
   runId: string;
+  /**
+   * Machine-readable version of the --json event-stream contract
+   * (events.SchemaVersion on the Go side). Present on every run.start — the
+   * first event of every stream — so a front door can detect a breaking
+   * contract change at stream open. Adding fields does NOT bump it; renaming or
+   * removing an existing field does. See internal/engine/events/event.go.
+   */
+  schemaVersion: string;
   scope: Scope;
 }
 

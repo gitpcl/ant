@@ -1,0 +1,16 @@
+name        = "bad-report-only"
+description = "Report-only species that wrongly declares verify checks; the loader must reject it."
+severity    = "low"
+languages   = ["go"]
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind = "none"
+
+# INVALID: a report-only (none) species proposes no change, so it must declare
+# no verify checks. The loader rejects this.
+[verify]
+checks = ["detector-clears"]

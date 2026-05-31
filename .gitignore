@@ -26,4 +26,7 @@ coverage.xml
 
 # Agent harness working state + project docs (kept local, not versioned)
 .harness/
-docs/
+docs/*
+# ...except the capability matrix: it is a versioned deliverable (Sprint 022 §9)
+# guarded by a committed drift test, so it must be tracked for CI to pass.
+!docs/CAPABILITY-MATRIX.md

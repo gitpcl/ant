@@ -1,0 +1,15 @@
+name        = "report-only-sample"
+description = "Report-only sample species: detects a marker and REPORTS it, proposing no change (fix.kind=none, Sprint 022 Finding 4)."
+severity    = "low"
+languages   = ["go"]
+enabled     = false
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# Report-only: no [fix].transform and no [verify].checks — fix.kind="none"
+# declares the species detect-only, so the loader requires no fix/verify
+# boilerplate.
+[fix]
+kind = "none"

@@ -34,6 +34,16 @@ func fixedClock() func() time.Time {
 func TestScoutJSONGolden(t *testing.T) {
 	got := renderGoldenStream(t)
 
+	// Beyond the byte-for-byte golden, assert the schema_version explicitly with
+	// a targeted message: the golden tells you the stream drifted, this tells you
+	// the contract VERSION drifted (a deliberate, breaking-change-only event per
+	// the events.SchemaVersion policy). Mismatch here means a bump was not
+	// intended or progress_log.md was not updated.
+	wantVer := `"schemaVersion":"` + events.SchemaVersion + `"`
+	if !bytes.Contains(got, []byte(wantVer)) {
+		t.Errorf("run.start is missing the baseline schema version %s; got stream:\n%s", wantVer, got)
+	}
+
 	if os.Getenv("UPDATE_GOLDEN") == "1" {
 		if err := os.MkdirAll(filepath.Dir(goldenPath), 0o755); err != nil {
 			t.Fatalf("mkdir golden dir: %v", err)

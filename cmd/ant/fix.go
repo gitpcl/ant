@@ -44,6 +44,19 @@ func newFixCmd() *cobra.Command {
 // builds the per-species fix/verify/trust recipes + detectors via the engine's
 // composition root, and drives the run with the renderer chosen by TTY/--json.
 func runFix(cmd *cobra.Command, args []string) error {
+	// Build the single config.Resolver that owns precedence (flags > ant.toml >
+	// manifest > built-in default — TECHSPEC §9). config.Bind reads ant.toml into
+	// viper's config-file band and binds the bound pflags; NewResolver seeds the
+	// defaults/manifest band. Every effective knob this run uses (verify limits,
+	// model, concurrency) is read back through this one authority — runFix no
+	// longer calls verify.DefaultLimits() or its own flag-reading helpers, so the
+	// front door cannot drift from the resolver other front doors share.
+	v, _, err := config.Bind(cmd.Flags(), configPathFlag(cmd))
+	if err != nil {
+		return err // malformed ant.toml → operational (exit 2)
+	}
+	resolver := config.NewResolver(v, config.ManifestDefaults{})
+
 	cfg, _, err := config.Load(configFileOrDefault(configPathFlag(cmd)))
 	if err != nil {
 		return err // malformed ant.toml → operational (exit 2)
@@ -72,8 +85,21 @@ func runFix(cmd *cobra.Command, args []string) error {
 	}
 
 	rc := colony.RecipeConfig{
-		Limits:           verify.DefaultLimits(),
-		RawModelModel:    modelFlagOrConfig(cmd, cfg),
+		// Diff-bounded caps and the rawmodel model id all come from the resolver
+		// (flags > ant.toml > manifest > default), so [verify].max_changed_lines/
+		// max_changed_files and [colony].model are honored without a second code
+		// path. A configured 0 limit means "unbounded" on that dimension (verify
+		// .Limits semantics) — the resolver passes the value through unchanged.
+		Limits: verify.Limits{
+			MaxChangedLines: resolver.MaxChangedLines(),
+			MaxChangedFiles: resolver.MaxChangedFiles(),
+		},
+		// Effective fixer adapter for llm species (flag > ant.toml > manifest >
+		// default), selected in the colony composition root — cmd/ant only threads
+		// the resolved name (TECHSPEC §3). An unknown value surfaces as a typed
+		// config error from BuildRecipes, never a silent rawmodel fallback.
+		Fixer:            resolver.Fixer(),
+		RawModelModel:    resolver.Model(),
 		RawModelEndpoint: os.Getenv("ANT_RAWMODEL_ENDPOINT"),
 		RawModelAPIKey:   os.Getenv("ANT_RAWMODEL_API_KEY"),
 	}
@@ -106,13 +132,13 @@ func runFix(cmd *cobra.Command, args []string) error {
 	}
 
 	opts := colony.DriveOptions{
-		Scope:       engine.Scope{Root: path, Species: antFilter},
+		Scope:       engine.Scope{Root: path, Species: antFilter, IgnoreGlobs: resolver.IgnorePaths()},
 		Detectors:   detectors,
 		Recipes:     recipes,
 		Store:       st,
-		Concurrency: concurrencyFlagOrDefault(cmd),
+		Concurrency: resolver.Concurrency(),
 		Renderer:    renderer,
-		Workers:     concurrencyFlagOrDefault(cmd),
+		Workers:     resolver.Concurrency(),
 		Ascii:       asciiEnabled(cmd),
 		Color:       colorEnabled(),
 		SeenSpecies: seen,
@@ -172,29 +198,4 @@ func colorEnabled() bool {
 		return false
 	}
 	return isTTY()
-}
-
-// modelFlagOrConfig resolves the model id: --model flag wins, else ant.toml
-// [colony].model, else the built-in default. Kept here as a small flag read; the
-// full viper precedence chain is owned by the engine's config.Resolver.
-func modelFlagOrConfig(cmd *cobra.Command, cfg config.Config) string {
-	if f := cmd.Flags().Lookup("model"); f != nil && f.Value.String() != "" {
-		return f.Value.String()
-	}
-	if cfg.Colony.Model != nil && *cfg.Colony.Model != "" {
-		return *cfg.Colony.Model
-	}
-	return config.DefaultModel
-}
-
-// concurrencyFlagOrDefault resolves the ant count: --concurrency if > 0, else
-// the built-in default (NumCPU). ant.toml precedence is handled engine-side for
-// the full chain; this keeps the live-view lane count sensible.
-func concurrencyFlagOrDefault(cmd *cobra.Command) int {
-	if f := cmd.Flags().Lookup("concurrency"); f != nil {
-		if n, err := cmd.Flags().GetInt("concurrency"); err == nil && n > 0 {
-			return n
-		}
-	}
-	return config.DefaultConcurrency()
 }

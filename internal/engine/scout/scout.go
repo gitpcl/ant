@@ -97,6 +97,12 @@ func Run(ctx context.Context, bus *events.Bus, opts Options) (Result, error) {
 		return Result{RunID: runID}, err
 	}
 
+	// Honor [ignore].paths (Scope.IgnoreGlobs, sourced from the config resolver's
+	// IgnorePaths() at the front door): drop any finding whose file is under an
+	// ignored path BEFORE it is published or counted. This is the single
+	// scope/detector boundary — every detector's findings pass through it, so no
+	// detector special-cases ignoring (TECHSPEC §9).
+	findings = engine.FilterIgnored(findings, opts.Scope.IgnoreGlobs)
 	findings = applySeverityFilter(findings, opts.SeverityFilter)
 	sortFindings(findings)
 

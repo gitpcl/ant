@@ -53,6 +53,13 @@ func detectFindings(ctx context.Context, detectors []engine.NamedDetector, scope
 		return nil, firstErr
 	}
 
+	// Honor [ignore].paths the SAME way scout does: drop findings under an ignored
+	// path before they are published, counted, or turned into fix tasks. The
+	// colony builds fix tasks from these findings (loop.go), so filtering here is
+	// the single boundary that gives "no findings AND no fix tasks" for free — and
+	// every detector inherits it without a per-detector check (TECHSPEC §9).
+	all = engine.FilterIgnored(all, scope.IgnoreGlobs)
+
 	// Publish findings in a deterministic order so the queue counter and --json
 	// stream are stable regardless of detector goroutine completion order.
 	sortFindings(all)

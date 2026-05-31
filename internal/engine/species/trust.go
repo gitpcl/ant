@@ -161,6 +161,59 @@ func EffectiveTrust(r Resolved, state TrustState) bool {
 	return true
 }
 
+// ReviewOutcome reports what a single `ant review` pass actually DID, so the
+// trust authority can decide whether that pass earned a species its lift of the
+// freshly-installed propose-only override. Before Sprint 022 the override lifted
+// merely because review.Run returned — i.e. opening and immediately quitting an
+// `ant review` session lifted trust without any human judgment. That is too weak
+// a signal for a third-party command-detector species, whose scan-time script
+// exec is gated behind this very override (ScriptExecTrust). Sprint 022 Finding 6
+// tightens it: trust is earned by an EXPLICIT human check, aligning with the
+// Sprint 011 trust model.
+//
+// A pass qualifies as a real review when EITHER:
+//   - Decided: the reviewer made at least one explicit accept/skip decision, OR
+//   - ReachedEnd: the reviewer walked to the end-of-review screen (they saw every
+//     staged item and chose to leave them as-is — still a deliberate human pass).
+//
+// A pass that does neither (opened then quit on the first item with no decision)
+// is NOT a review and must NOT lift the override. The zero value {} is exactly
+// that no-op pass — the safe default.
+type ReviewOutcome struct {
+	// Decided is true once the reviewer made at least one explicit accept/skip
+	// decision during the pass.
+	Decided bool
+	// ReachedEnd is true once the reviewer reached the end-of-review screen,
+	// having walked past the last staged item.
+	ReachedEnd bool
+}
+
+// LiftsTrust reports whether this review pass earned the freshly-installed
+// override its lift: an explicit accept/skip decision OR reaching end-of-review.
+// A no-decision, never-reached-end pass returns false — the conservative default
+// that keeps a third-party command species propose-only / scan-exec-blocked.
+func (o ReviewOutcome) LiftsTrust() bool {
+	return o.Decided || o.ReachedEnd
+}
+
+// MarkReviewedAfter is the SINGLE gated entry point the CLI calls to lift the
+// freshly-installed override after an `ant review` pass (Sprint 022 Finding 6).
+// It lifts (persists Reviewed=true via store.MarkReviewed) for the named species
+// ONLY when the pass's outcome qualifies as a real review (ReviewOutcome.LiftsTrust).
+// A no-decision pass is a no-op: trust stays where it was, so a third-party
+// command-detector species cannot earn its override lift just by review.Run
+// returning. Keeping this decision HERE (the trust authority) rather than in
+// cmd/ant means the CLI only passes the outcome signal; the engine owns whether
+// it counts. A nil store or empty name set is a no-op. The store's own error is
+// returned so callers may choose to treat it as non-fatal (the override simply
+// stays conservative — the safe direction).
+func MarkReviewedAfter(store TrustStore, outcome ReviewOutcome, names ...string) error {
+	if store == nil || len(names) == 0 || !outcome.LiftsTrust() {
+		return nil
+	}
+	return store.MarkReviewed(names...)
+}
+
 // ScriptExecTrust is the trust authority for the SECOND question the Sprint-020
 // command escape hatch raises: may this species' command DETECTOR / command:
 // VERIFIER script EXECUTE? Unlike EffectiveTrust (which gates auto-APPLY and so

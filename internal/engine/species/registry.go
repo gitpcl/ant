@@ -72,6 +72,9 @@ func NewRegistry() *Registry {
 			FixKindDeterministic: {},
 			FixKindLLM:           {},
 			FixKindTool:          {},
+			// none = report-only (Sprint 022 Finding 4): a valid, recognized fix kind
+			// that declares NO transform/prompt/command and needs NO [verify].checks.
+			FixKindNone: {},
 		},
 		verifyBase: map[string]struct{}{
 			"compile":               {},

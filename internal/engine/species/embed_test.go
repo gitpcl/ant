@@ -43,13 +43,13 @@ var adr0002 = map[string]struct {
 	"long-function":            {FixKindLLM, false, true},
 	"magic-number":             {FixKindLLM, false, true},
 	"duplicate-code-small":     {FixKindLLM, false, true},
-	// todo-expired is REPORT-ONLY and ships DISABLED by default (Sprint 019). Its
-	// [fix] is a minimal deterministic no-prompt stub purely to satisfy the
-	// manifest schema (every species needs a [fix]+[verify]); it is never invoked
-	// because the species is surfaced only via scout and resolves disabled. Hence
-	// the row is {FixKindDeterministic, auto_apply=false, enabled=false} — the
-	// disabled, propose-only, report-only posture.
-	"todo-expired": {FixKindDeterministic, false, false},
+	// todo-expired is REPORT-ONLY and ships DISABLED by default. As of Sprint 022
+	// (Finding 4) report-only is a FIRST-CLASS manifest kind: its [fix].kind="none"
+	// (no fake deterministic [fix] + detector-clears [verify] workaround — that was
+	// the Sprint 019 ENGINE-GAP #2 hack, now removed). It declares nothing to fix,
+	// so `ant fix` rejects it; it is surfaced only via scout and resolves disabled.
+	// Hence the row is {FixKindNone, auto_apply=false, enabled=false}.
+	"todo-expired": {FixKindNone, false, false},
 	// Sprint 020 P5 dependency/config: four propose-only (auto_apply=false)
 	// deterministic species that operate on non-source files (go.mod, config.json,
 	// CI YAML) via the command-detector + command:-verifier escape hatches. Their

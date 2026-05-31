@@ -121,6 +121,49 @@ func TestScoutReportsFindingsAndEventSequence(t *testing.T) {
 	}
 }
 
+// TestScoutHonorsIgnorePaths is the scout half of the Sprint 022
+// ignore-path-enforcement acceptance test: a finding whose file is under
+// [ignore].paths (carried on Scope.IgnoreGlobs) produces NO scout finding and is
+// never published, while a finding outside the ignored path is still reported.
+// The same fan-out boundary (engine.FilterIgnored) backs `ant fix`, so the two
+// front doors honor [ignore].paths identically (see colony detectFindings).
+func TestScoutHonorsIgnorePaths(t *testing.T) {
+	opts := Options{
+		Scope: engine.Scope{Root: ".", IgnoreGlobs: []string{"vendor/", "*_generated.go"}},
+		Detectors: []engine.NamedDetector{
+			{Species: "dead-code", Detector: fakeDetector{findings: []engine.Finding{
+				finding("dead-code", "vendor/lib/util.go", 1, engine.SeverityHigh),     // ignored: dir prefix
+				finding("dead-code", "src/types_generated.go", 2, engine.SeverityHigh), // ignored: basename glob
+				finding("dead-code", "src/app.go", 3, engine.SeverityMedium),           // kept
+			}}},
+		},
+		RunID: "fixed",
+	}
+	evs, res, err := drain(t, opts)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(res.Findings) != 1 {
+		t.Fatalf("got %d findings, want 1 (only the non-ignored src/app.go)", len(res.Findings))
+	}
+	if res.Findings[0].File != "src/app.go" {
+		t.Errorf("kept finding = %q, want src/app.go", res.Findings[0].File)
+	}
+	// No detect.finding event for an ignored file should ever be published.
+	findingEvents := 0
+	for _, ev := range evs {
+		if ev.Type == events.TypeDetectFinding {
+			findingEvents++
+			if ev.DetectFinding.Finding.File != "src/app.go" {
+				t.Errorf("published an ignored finding: %q", ev.DetectFinding.Finding.File)
+			}
+		}
+	}
+	if findingEvents != 1 {
+		t.Errorf("published %d detect.finding events, want 1", findingEvents)
+	}
+}
+
 func TestScoutAntFilterLimitsSpecies(t *testing.T) {
 	opts := Options{
 		Scope: engine.Scope{Root: "."},

@@ -9,20 +9,13 @@ enabled     = false
 kind = "ast-grep"
 rule = "detect.yml"
 
-# REPORT-ONLY (Sprint 019, ENGINE-GAP #2). This species is intentionally
-# detect-only: `ant scout` reports its findings and changes NOTHING in the working
-# tree (scout's contract — TECHSPEC §2, proven by TestScoutNeverWritesWorkingTree).
-# It is NOT meant to be run through `ant fix`. The manifest schema requires a
-# [fix] and a non-empty [verify] for any species, so a minimal deterministic
-# (no-prompt) fix + the detector-clears check are declared to satisfy validation;
-# they are never exercised because the species ships enabled=false and is surfaced
-# only via scout. The fixture asserts the report-only contract directly (findings
-# produced, NO diff) rather than driving a fix — see species/fixture
-# RunDetectOnlyCase. A truly fix-less manifest (no [fix] block, report-only fix
-# kind) would require an engine change to the loader/schema, which is out of scope
-# for a species sprint (escalation path noted in .harness/progress_log.md).
+# REPORT-ONLY (Sprint 022 Finding 4, first-class via fix.kind = "none"). This
+# species is detect-only: `ant scout` reports its findings and changes NOTHING in
+# the working tree (TECHSPEC §2). It declares no [fix].transform and no
+# [verify].checks because it proposes no change — `ant fix` rejects a report-only
+# species with a clear message. (Earlier — Sprint 019 ENGINE-GAP #2 — the schema
+# forced a fake deterministic [fix] + detector-clears [verify] workaround here;
+# fix.kind="none" makes report-only a first-class manifest kind, so that hack is
+# gone.)
 [fix]
-kind = "deterministic"
-
-[verify]
-checks = ["detector-clears"]
+kind = "none"

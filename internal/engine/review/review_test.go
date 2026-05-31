@@ -175,6 +175,52 @@ func TestLastDiffReachesEndScreen(t *testing.T) {
 	}
 }
 
+// TestOutcomeTracksRealReview asserts the model's outcome() reports whether the
+// pass was a real human review, feeding the Sprint-022 strict trust lift
+// (species.MarkReviewedAfter): a pass that decides nothing and never reaches the
+// end is a no-op (must NOT lift trust), while an explicit accept/skip OR reaching
+// end-of-review qualifies.
+func TestOutcomeTracksRealReview(t *testing.T) {
+	t.Run("open then quit on first item with no decision", func(t *testing.T) {
+		m := newModel(sampleRecords(2), "r", newFakeMarker(), false, false)
+		// q on a pending session shows the confirm prompt; quit-anyway leaves all
+		// pending — no decision, never reached the end.
+		m2, _ := m.Update(key("q"))
+		mm := m2.(model)
+		out := mm.outcome()
+		if out.LiftsTrust() {
+			t.Fatalf("a no-decision, never-ended pass must NOT lift trust; got %+v", out)
+		}
+	})
+
+	t.Run("explicit accept/skip qualifies", func(t *testing.T) {
+		m := newModel(sampleRecords(3), "r", newFakeMarker(), false, false)
+		m = press(m, "s") // skip item 0, advance — an explicit decision
+		out := m.outcome()
+		if !out.Decided {
+			t.Fatal("an explicit skip should set Decided")
+		}
+		if !out.LiftsTrust() {
+			t.Fatal("a pass with an explicit decision must lift trust")
+		}
+	})
+
+	t.Run("reaching end-of-review qualifies even without a decision", func(t *testing.T) {
+		m := newModel(sampleRecords(2), "r", newFakeMarker(), false, false)
+		m = press(m, "n", "n") // walk past both items with NO accept/skip
+		if m.phase != phaseEnd {
+			t.Fatalf("expected End phase after walking past the last item, got %v", m.phase)
+		}
+		out := m.outcome()
+		if out.Decided {
+			t.Fatal("walking with n must not set Decided (no accept/skip was made)")
+		}
+		if !out.ReachedEnd || !out.LiftsTrust() {
+			t.Fatalf("reaching end-of-review must lift trust; got %+v", out)
+		}
+	})
+}
+
 // TestQuitWithPendingConfirms asserts q with pending items shows the confirm
 // prompt and quit-anyway exits leaving pending unapplied (§5.3).
 func TestQuitWithPendingConfirms(t *testing.T) {

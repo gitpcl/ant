@@ -86,6 +86,8 @@ func newRootCmd() *cobra.Command {
 		newReviewCmd(),
 		newApplyCmd(),
 		newInitCmd(),
+		newDoctorCmd(),
+		newExplainCmd(),
 		speciesCmd(),
 	)
 	return root
@@ -102,6 +104,7 @@ func speciesCmd() *cobra.Command {
 		newSpeciesListCmd(),
 		newSpeciesInstallCmd(),
 		newSpeciesRemoveCmd(),
+		newSpeciesValidateCmd(),
 	)
 	return cmd
 }

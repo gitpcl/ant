@@ -13,14 +13,33 @@ import (
 	"github.com/gitpcl/ant/internal/engine/verify/testselect"
 )
 
+// LLM fixer-adapter names (the effective config.Resolver.Fixer() value for an
+// llm-kind species). Selection by these names lives HERE in the colony
+// composition root, not in cmd/ant: the CLI only threads the resolved string
+// (TECHSPEC §3). An llm species's manifest fix kind says "use an LLM"; this knob
+// picks WHICH adapter — the harness binaries (pi/claudecode/codex) or the raw
+// HTTP model — all of which already exist in internal/engine/fix.
+const (
+	FixerPi         = "pi"
+	FixerClaudeCode = "claudecode"
+	FixerCodex      = "codex"
+	FixerRawModel   = "rawmodel"
+)
+
 // RecipeConfig carries the resolved colony knobs a recipe needs that are not on
-// the species manifest: the diff-bounded limits (config layer) and the rawmodel
-// fixer wiring for llm species (endpoint/model/api key from resolved config).
-// Building recipes is composition the engine owns (not cmd/ant) so the CLI stays
-// thin and free of the forbidden net/http import — the rawmodel adapter lives in
-// the fix package.
+// the species manifest: the diff-bounded limits (config layer), the effective
+// fixer-adapter name for llm species (config.Resolver.Fixer()), and the rawmodel
+// HTTP wiring (endpoint/model/api key from resolved config). Building recipes is
+// composition the engine owns (not cmd/ant) so the CLI stays thin and free of the
+// forbidden net/http import — the adapters live in the fix package.
 type RecipeConfig struct {
-	Limits           verify.Limits
+	Limits verify.Limits
+	// Fixer is the effective fixer-adapter name for llm species (pi | claudecode
+	// | codex | rawmodel), resolved by config.Resolver.Fixer() (flag > ant.toml >
+	// manifest > default). An empty value defaults to FixerPi (the built-in
+	// default); an unrecognized value is a typed config error at build time, never
+	// a silent rawmodel fallback.
+	Fixer            string
 	RawModelEndpoint string
 	RawModelModel    string
 	RawModelAPIKey   string
@@ -69,6 +88,18 @@ func BuildRecipes(decisions []species.TrustDecision, antFilter []string, rulesRo
 			}
 		}
 
+		// Report-only species (fix kind none, Sprint 022 Finding 4) declare NOTHING
+		// to fix: they belong on the scout/read-only path, not in a fix recipe. Reject
+		// them here with a clear, typed config error (engine.ErrOperational → exit 2)
+		// rather than silently dropping them or building a no-op fixer — `ant fix`
+		// must tell the user the species is report-only and point at `ant scout`. This
+		// runs BEFORE buildFixer so the message names report-only specifically instead
+		// of falling through to the generic "fix kind not supported" skip.
+		if m.IsReportOnly() {
+			return nil, nil, fmt.Errorf("%w: species %q is report-only (fix.kind=%q) and declares nothing to fix — use `ant scout` to see its findings",
+				engine.ErrOperational, m.Name, species.FixKindNone)
+		}
+
 		// SECURITY (Sprint 020): a command detector/verifier execs a SPECIES-SUPPLIED
 		// script — the detector at SCAN time, a broader exec surface than the fix-time
 		// tool runner. An untrusted (OriginUser, never-reviewed) community species must
@@ -84,13 +115,68 @@ func BuildRecipes(decisions []species.TrustDecision, antFilter []string, rulesRo
 		}
 		detectors = append(detectors, engine.NamedDetector{Species: m.Name, Detector: det})
 
+		fixer, err := buildFixer(m, rc)
+		if err != nil {
+			return nil, nil, err // typed config error (e.g. unknown fixer name) — exit 2
+		}
 		recipes[m.Name] = SpeciesRecipe{
-			Fixer:       buildFixer(m, rc),
+			Fixer:       fixer,
 			NewVerifier: verifierBuilder(m, det, rulesRoot, rc.Limits, coverCache, commandExec),
 			AutoApply:   d.EffectiveAutoApply, // FINAL trust decision (post freshly-installed override)
 		}
 	}
 	return recipes, detectors, nil
+}
+
+// ScoutDetectors builds the READ-ONLY scout detector set from the SAME resolved
+// species set that drives BuildRecipes / `ant fix` (Sprint 022 Finding 1). It is
+// the single composition that re-unifies the two front doors: scout no longer
+// scans the hard-coded 2-species detect.Builtins table but every built-in,
+// installed, and config-enabled species, honoring each species' EffectiveEnabled
+// (a species disabled via ant.toml drops out of scout exactly as it drops out of
+// fix). It lives here in the colony composition root — the existing single place
+// that maps a resolved species to a concrete detector — so scout and fix share
+// the identical species→detector mapping rather than two divergent tables.
+//
+// ast-grep species build the same NewASTGrep detector buildDetector does, with
+// the rule resolved under rulesRoot as <rulesRoot>/<species>/<rule> (materialized
+// embedded layout); the [detect] alias is collapsed to [detector] identically.
+//
+// SECURITY (Sprint 020/022): a `command` detector execs a species-supplied script
+// at SCAN time — a broader surface than the fix-time tool runner — and scout is
+// the read-only pass that does NOT consult the per-species trust resolver. Rather
+// than route an unvetted script onto the read-only path (scout.Run rejects it by
+// the ScanSafe invariant) OR silently drop the species, a command-detector
+// species surfaces as a scan-safe BLOCKED detector (detect.NewScoutBlocked): it
+// runs no script and emits a single "blocked until reviewed" finding so the
+// species is VISIBLE in scout output, naming `ant fix`/`ant review` as the path
+// that clears the scan-time trust gate. This satisfies the Sprint 022 deliverable
+// ("command-detector species surface as blocked-until-reviewed, never silently
+// dropped") without weakening the trust gate, since the actual script exec is
+// still gated by ScriptExecAllowed on the fix path.
+func ScoutDetectors(resolved []species.Resolved, rulesRoot string) []engine.NamedDetector {
+	out := make([]engine.NamedDetector, 0, len(resolved))
+	for _, r := range resolved {
+		if !r.EffectiveEnabled {
+			continue // disabled species (ai-slop, or ant.toml enabled=false) do not scan
+		}
+		m := r.Manifest
+		d := m.Detector
+		if d.Kind == "" {
+			d = m.Detect // accept the [detect] alias, exactly as buildDetector does
+		}
+		switch d.Kind {
+		case species.DetectKindCommand:
+			out = append(out, engine.NamedDetector{Species: m.Name, Detector: detect.NewScoutBlocked(m.Name)})
+		default: // ast-grep is the default ("" or "ast-grep")
+			rule := d.Rule
+			if rulesRoot != "" && rule != "" {
+				rule = rulesRoot + "/" + m.Name + "/" + rule
+			}
+			out = append(out, engine.NamedDetector{Species: m.Name, Detector: detect.NewASTGrep(m.Name, rule)})
+		}
+	}
+	return out
 }
 
 // buildDetector constructs the species' detector. ast-grep is the default;
@@ -149,27 +235,24 @@ func (b blockedDetector) Detect(context.Context, engine.Scope) ([]engine.Finding
 }
 
 // buildFixer maps the manifest fix kind to a concrete Fixer. deterministic uses
-// the named transform with no model; llm uses the rawmodel HTTP adapter wired
-// from resolved config (the model is never hardcoded — TECHSPEC §2). A kind that
-// cannot be wired yields a Fixer that fails per finding (a visible skip).
-func buildFixer(m species.Manifest, rc RecipeConfig) engine.Fixer {
+// the named transform with no model; llm selects the effective fixer ADAPTER
+// (rc.Fixer: pi | claudecode | codex | rawmodel) — the harness binaries or the
+// raw HTTP model — all wired from resolved config (the model is never hardcoded
+// — TECHSPEC §2). A construction failure that is merely a missing knob (e.g. an
+// llm species with no rawmodel endpoint) yields a Fixer that fails per finding (a
+// visible skip). An UNRECOGNIZED fixer name is a typed config error
+// (engine.ErrOperational, exit 2) returned to the caller — never a silent
+// rawmodel fallback (Sprint 022 Finding 3).
+func buildFixer(m species.Manifest, rc RecipeConfig) (engine.Fixer, error) {
 	switch m.Fix.Kind {
 	case species.FixKindDeterministic:
 		transform := m.Fix.Transform
 		if transform == "" {
 			transform = fix.TransformDeleteMatch
 		}
-		return fix.NewDeterministic(transform)
+		return fix.NewDeterministic(transform), nil
 	case species.FixKindLLM:
-		fixer, err := fix.NewRawModel(fix.RawModelConfig{
-			Endpoint: rc.RawModelEndpoint,
-			Model:    rc.RawModelModel,
-			APIKey:   rc.RawModelAPIKey,
-		})
-		if err != nil {
-			return unwiredFixer{species: m.Name, reason: err.Error()}
-		}
-		return fixer
+		return buildLLMFixer(m, rc)
 	case species.FixKindTool:
 		// Tool-runner: exec the manifest-declared external formatter/autofixer on a
 		// scratch copy and capture the diff (Sprint 017). Command + args are
@@ -179,7 +262,7 @@ func buildFixer(m species.Manifest, rc RecipeConfig) engine.Fixer {
 		if m.Fix.Timeout != "" {
 			d, err := time.ParseDuration(m.Fix.Timeout)
 			if err != nil {
-				return unwiredFixer{species: m.Name, reason: fmt.Sprintf("invalid [fix].timeout %q: %v", m.Fix.Timeout, err)}
+				return unwiredFixer{species: m.Name, reason: fmt.Sprintf("invalid [fix].timeout %q: %v", m.Fix.Timeout, err)}, nil
 			}
 			timeout = d
 		}
@@ -190,12 +273,60 @@ func buildFixer(m species.Manifest, rc RecipeConfig) engine.Fixer {
 			VersionArgs: m.Fix.VersionArgs,
 		})
 		if err != nil {
-			return unwiredFixer{species: m.Name, reason: err.Error()}
+			return unwiredFixer{species: m.Name, reason: err.Error()}, nil
 		}
-		return fixer
+		return fixer, nil
 	default:
-		return unwiredFixer{species: m.Name, reason: fmt.Sprintf("fix kind %q is not supported", m.Fix.Kind)}
+		return unwiredFixer{species: m.Name, reason: fmt.Sprintf("fix kind %q is not supported", m.Fix.Kind)}, nil
 	}
+}
+
+// buildLLMFixer selects the concrete LLM adapter for an llm-kind species by the
+// effective fixer name (rc.Fixer). An empty name defaults to FixerPi (the
+// built-in config default). pi/claudecode/codex are the exec harnesses (model id
+// from config, never hardcoded — TECHSPEC §2); rawmodel is the raw HTTP adapter
+// wired from the resolved endpoint/model/api key. A construction failure that is
+// only a missing runtime knob becomes a per-finding visible skip; an
+// UNRECOGNIZED fixer name is a typed config error (engine.ErrOperational), so the
+// front door fails with exit 2 instead of silently falling back to rawmodel.
+func buildLLMFixer(m species.Manifest, rc RecipeConfig) (engine.Fixer, error) {
+	name := rc.Fixer
+	if name == "" {
+		name = FixerPi
+	}
+	switch name {
+	case FixerPi:
+		fixer, err := fix.NewPi(fix.HarnessConfig{Model: rc.RawModelModel})
+		return wrapUnwired(m, fixer, err), nil
+	case FixerClaudeCode:
+		fixer, err := fix.NewClaudeCode(fix.HarnessConfig{Model: rc.RawModelModel})
+		return wrapUnwired(m, fixer, err), nil
+	case FixerCodex:
+		fixer, err := fix.NewCodex(fix.HarnessConfig{Model: rc.RawModelModel})
+		return wrapUnwired(m, fixer, err), nil
+	case FixerRawModel:
+		fixer, err := fix.NewRawModel(fix.RawModelConfig{
+			Endpoint: rc.RawModelEndpoint,
+			Model:    rc.RawModelModel,
+			APIKey:   rc.RawModelAPIKey,
+		})
+		return wrapUnwired(m, fixer, err), nil
+	default:
+		return nil, fmt.Errorf("%w: unknown fixer %q for species %q (expected one of: %s, %s, %s, %s)",
+			engine.ErrOperational, name, m.Name, FixerPi, FixerClaudeCode, FixerCodex, FixerRawModel)
+	}
+}
+
+// wrapUnwired turns an adapter constructor's (Fixer, error) into a single Fixer:
+// on success the real adapter, on a construction error (e.g. a missing model id
+// or rawmodel endpoint) an unwiredFixer that fails per finding as a VISIBLE skip
+// — distinct from an unknown-fixer name, which is a typed config error and never
+// reaches here.
+func wrapUnwired(m species.Manifest, fixer engine.Fixer, err error) engine.Fixer {
+	if err != nil {
+		return unwiredFixer{species: m.Name, reason: err.Error()}
+	}
+	return fixer
 }
 
 // verifierBuilder returns a per-finding verifier constructor: diff-bounded first

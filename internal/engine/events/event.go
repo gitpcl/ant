@@ -7,6 +7,21 @@ package events
 
 import "github.com/gitpcl/ant/internal/engine"
 
+// SchemaVersion is the machine-readable version of the --json event-stream
+// contract (Sprint 022 Future-Proofing #4). It is stamped onto the run.start
+// event — the single, mandatory first event of every stream — so a front door
+// reads the contract version once at stream open, before processing any
+// payload, and can refuse or adapt to a major version it does not understand.
+//
+// Versioning policy (so future bumps are deliberate, recorded in
+// .harness/progress_log.md): this is a simple integer-as-string. ADDING a field
+// is backward-compatible and does NOT bump it (the existing fields are
+// untouched and unknown-field-tolerant consumers ignore the addition). RENAMING,
+// REMOVING, or RESTRUCTURING an existing field is a breaking change and MUST
+// increment this value. The matching golden tests (events + manifest) pin the
+// baseline so an unintended bump fails CI.
+const SchemaVersion = "1"
+
 // Type is the canonical event kind. The set matches TECHSPEC §11 exactly; the
 // front doors (Claude Code skill, Pi extension, CI) depend on these strings, so
 // they are a stable contract.
@@ -43,9 +58,16 @@ type Event struct {
 
 // RunStartPayload announces a colony run. Carries the scope so the TUI can show
 // what is being scanned and --json records the run parameters.
+//
+// SchemaVersion declares the --json contract version of this stream (see the
+// SchemaVersion constant). The bus stamps it on publish when unset, so every
+// run.start carries it without each producer having to set it; an explicitly
+// set value is left intact (mirroring how the bus stamps Seq/Time). It is the
+// first thing a front door can read to detect a breaking contract change.
 type RunStartPayload struct {
-	RunID string       `json:"runId"`
-	Scope engine.Scope `json:"scope"`
+	RunID         string       `json:"runId"`
+	SchemaVersion string       `json:"schemaVersion"`
+	Scope         engine.Scope `json:"scope"`
 }
 
 // DetectFindingPayload reports a finding as detection discovers it, feeding the

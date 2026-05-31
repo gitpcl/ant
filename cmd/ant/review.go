@@ -6,6 +6,7 @@ import (
 	"github.com/gitpcl/ant/internal/engine"
 	"github.com/gitpcl/ant/internal/engine/config"
 	"github.com/gitpcl/ant/internal/engine/review"
+	"github.com/gitpcl/ant/internal/engine/species"
 	"github.com/gitpcl/ant/internal/engine/stage"
 	store "github.com/gitpcl/ant/internal/engine/store"
 	"github.com/gitpcl/ant/internal/engine/telemetry"
@@ -66,15 +67,21 @@ func runReview(cmd *cobra.Command, args []string) error {
 	// output is the one human check that earns it its configured trust.
 	reviewed := reviewedSpecies(area)
 
-	if err := review.Run(cmd.Context(), cmd.OutOrStdout(), area, opts); err != nil {
+	outcome, err := review.Run(cmd.Context(), cmd.OutOrStdout(), area, opts)
+	if err != nil {
 		return err
 	}
 
-	// One review pass completed: record each reviewed species so its CONFIGURED
-	// trust applies on subsequent runs. A marking failure is non-fatal (the
+	// Lift the freshly-installed propose-only override ONLY if this pass was a
+	// real human review — an explicit accept/skip decision OR reaching the
+	// end-of-review screen (Sprint 022 Finding 6). The trust authority owns that
+	// gate (species.MarkReviewedAfter); this front door merely passes the outcome
+	// signal. A pass that decided nothing and never reached the end does NOT lift
+	// trust, so a third-party command-detector species cannot earn its override
+	// just because review.Run returned. A marking failure is non-fatal (the
 	// override simply stays conservative — the safe direction).
 	if len(reviewed) > 0 {
-		_ = st.MarkReviewed(reviewed...)
+		_ = species.MarkReviewedAfter(st, outcome, reviewed...)
 	}
 
 	// Telemetry (PRD §8 accept rate): OFF by default. When [telemetry] enabled =

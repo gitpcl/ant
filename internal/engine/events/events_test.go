@@ -7,6 +7,49 @@ import (
 	"github.com/gitpcl/ant/internal/engine"
 )
 
+// TestRunStartCarriesSchemaVersion pins the --json contract version (Sprint 022
+// Future-Proofing #4): the bus stamps events.SchemaVersion onto run.start when
+// the producer leaves it unset, so every stream self-describes its schema. The
+// literal baseline is asserted here (not just `== SchemaVersion`) so an
+// unintended bump of the constant fails this test, forcing a deliberate update
+// to the value, the golden, and progress_log.md together.
+func TestRunStartCarriesSchemaVersion(t *testing.T) {
+	const wantBaseline = "1"
+	if SchemaVersion != wantBaseline {
+		t.Fatalf("SchemaVersion = %q, want baseline %q; bump it only deliberately (golden + progress_log.md)", SchemaVersion, wantBaseline)
+	}
+
+	b := NewBus()
+	sub := b.Subscribe()
+	b.Publish(Event{Type: TypeRunStart, RunStart: &RunStartPayload{RunID: "r"}})
+	b.Close()
+
+	ev, ok := <-sub.C
+	if !ok {
+		t.Fatal("no run.start event received")
+	}
+	if ev.RunStart == nil {
+		t.Fatal("run.start payload is nil")
+	}
+	if ev.RunStart.SchemaVersion != wantBaseline {
+		t.Fatalf("run.start schemaVersion = %q, want %q", ev.RunStart.SchemaVersion, wantBaseline)
+	}
+}
+
+// TestRunStartSchemaVersionExplicitWins confirms the bus does not clobber a
+// producer-set version (mirroring the Seq/Time stamping contract).
+func TestRunStartSchemaVersionExplicitWins(t *testing.T) {
+	b := NewBus()
+	sub := b.Subscribe()
+	b.Publish(Event{Type: TypeRunStart, RunStart: &RunStartPayload{RunID: "r", SchemaVersion: "99"}})
+	b.Close()
+
+	ev := <-sub.C
+	if ev.RunStart == nil || ev.RunStart.SchemaVersion != "99" {
+		t.Fatalf("explicit schemaVersion was overwritten: got %+v", ev.RunStart)
+	}
+}
+
 func TestPublishOrderedDelivery(t *testing.T) {
 	b := NewBus()
 	sub := b.Subscribe()

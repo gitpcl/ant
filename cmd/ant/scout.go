@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/gitpcl/ant/internal/engine"
+	"github.com/gitpcl/ant/internal/engine/colony"
 	"github.com/gitpcl/ant/internal/engine/config"
-	"github.com/gitpcl/ant/internal/engine/detect"
 	"github.com/gitpcl/ant/internal/engine/scout"
 	"github.com/gitpcl/ant/internal/engine/species"
 	"github.com/spf13/cobra"
@@ -37,13 +37,26 @@ func newScoutCmd() *cobra.Command {
 // — composition and rendering selection only.
 func runScout(cmd *cobra.Command, args []string) error {
 	// Load ant.toml through the engine's config layer so unknown keys surface as
-	// warnings (TECHSPEC §9) and precedence stays owned by one authority. scout
-	// itself consumes no [colony] knob yet (fixer/model/concurrency feed `ant
-	// fix`, a later sprint), but loading here means a malformed config fails fast
-	// (exit 2) and a typo is reported on every run, not silently ignored.
-	if err := surfaceConfigWarnings(cmd); err != nil {
+	// warnings (TECHSPEC §9) and precedence stays owned by one authority. A
+	// malformed config fails fast (exit 2) and a typo is reported on every run,
+	// not silently ignored. The parsed config also feeds species resolution below
+	// so scout sees the SAME enabled/disabled set `ant fix` does (Sprint 022).
+	cfg, err := surfaceConfigWarnings(cmd)
+	if err != nil {
 		return err // malformed ant.toml → operational (exit 2)
 	}
+
+	// Build the SAME config.Resolver `ant fix` uses so the effective [ignore].paths
+	// (and any future colony knob scout needs) comes from one precedence authority
+	// — scout and fix can never drift on what they ignore. config.Bind reads
+	// ant.toml into viper's file band; NewResolver seeds the defaults/manifest band.
+	// Scout exposes no ignore-affecting flags, so IgnorePaths() here equals the
+	// resolver value reaching the fix front door.
+	v, _, err := config.Bind(cmd.Flags(), configPathFlag(cmd))
+	if err != nil {
+		return err // malformed ant.toml → operational (exit 2)
+	}
+	resolver := config.NewResolver(v, config.ManifestDefaults{})
 
 	path := "."
 	if len(args) > 0 && args[0] != "" {
@@ -67,8 +80,20 @@ func runScout(cmd *cobra.Command, args []string) error {
 	}
 
 	scope := engine.Scope{
-		Root:    path,
-		Species: stringSlice(cmd, "ant"),
+		Root:        path,
+		Species:     stringSlice(cmd, "ant"),
+		IgnoreGlobs: resolver.IgnorePaths(),
+	}
+
+	// Resolve the full species set through the SAME path `ant fix` uses
+	// (species.NewResolver(userSpeciesRoot, nil).Resolve over the loaded config),
+	// so scout reports every built-in + installed + config-enabled species and
+	// honors enabled/disabled identically — no more hard-coded 2-species table
+	// (Sprint 022 Finding 1). The CLI does no merge/precedence logic itself; the
+	// resolver owns it.
+	resolved, err := species.NewResolver(userSpeciesRoot, nil).Resolve(cfg)
+	if err != nil {
+		return err // a malformed species manifest → operational (exit 2)
 	}
 
 	// Materialize the embedded built-in rule files to disk so the ast-grep
@@ -82,9 +107,13 @@ func runScout(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanupRules()
 
+	// Build scout's detector set from the resolved species via the colony
+	// composition root — the SAME species→detector mapping `ant fix` uses. A
+	// command-detector species surfaces as a scan-safe blocked-until-reviewed
+	// detector (never silently dropped, never an unvetted scan-time script exec).
 	opts := scout.Options{
 		Scope:          scope,
-		Detectors:      detect.Builtins(rulesRoot),
+		Detectors:      colony.ScoutDetectors(resolved, rulesRoot),
 		SeverityFilter: severityFilter,
 		AntFilter:      scope.Species,
 	}
@@ -147,22 +176,23 @@ func boolFlag(cmd *cobra.Command, flag string) bool {
 	return val
 }
 
-// surfaceConfigWarnings loads ant.toml through the engine's config layer and
+// surfaceConfigWarnings loads ant.toml through the engine's config layer,
 // prints any unknown-key warnings to stderr (TECHSPEC §9: unknown keys are
-// warned, never silently ignored). It returns an operational error (exit 2) for
-// a malformed file. The CLI does no precedence logic itself — the engine's
-// config package owns the loader and (for `ant fix`, later) the resolver; this
-// only relays warnings and the typed error to the centralized exit-code handler.
-func surfaceConfigWarnings(cmd *cobra.Command) error {
+// warned, never silently ignored), and returns the parsed config so the caller
+// can resolve species from it. It returns an operational error (exit 2) for a
+// malformed file. The CLI does no precedence logic itself — the engine's config
+// package owns the loader and the species resolver owns the merge; this only
+// relays warnings and the typed error to the centralized exit-code handler.
+func surfaceConfigWarnings(cmd *cobra.Command) (config.Config, error) {
 	configPath := configPathFlag(cmd)
-	_, warnings, _, err := config.LoadStrict(configFileOrDefault(configPath))
+	cfg, warnings, _, err := config.LoadStrict(configFileOrDefault(configPath))
 	if err != nil {
-		return err
+		return config.Config{}, err
 	}
 	for _, w := range warnings {
 		fmt.Fprintln(cmd.ErrOrStderr(), "ant: warning:", w)
 	}
-	return nil
+	return cfg, nil
 }
 
 // configFileOrDefault returns the explicit --config path, or the conventional

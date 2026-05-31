@@ -108,6 +108,12 @@ func (b *Bus) Publish(ev Event) {
 	if ev.Time == "" {
 		ev.Time = b.now().UTC().Format(time.RFC3339Nano)
 	}
+	// Stamp the --json contract version on the stream-opening event, like Seq
+	// and Time, so every producer's run.start self-describes its schema without
+	// each call site setting it. An explicit value (e.g. a test fixture) wins.
+	if ev.Type == TypeRunStart && ev.RunStart != nil && ev.RunStart.SchemaVersion == "" {
+		ev.RunStart.SchemaVersion = SchemaVersion
+	}
 	for ch := range b.subscribers {
 		ch <- ev
 	}

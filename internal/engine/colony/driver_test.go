@@ -149,6 +149,48 @@ func TestFixStagesVerifiedDiffsNothingApplied(t *testing.T) {
 	}
 }
 
+// TestFixHonorsIgnorePaths is the `ant fix` half of the Sprint 022
+// ignore-path-enforcement acceptance test: a finding whose file is under
+// [ignore].paths (Scope.IgnoreGlobs) produces NO fix task — it is never fixed,
+// verified, or staged — while a finding outside the ignored path is fixed and
+// staged as usual. Filtering happens once at the colony's detect fan-out
+// (detectFindings -> engine.FilterIgnored), the SAME boundary scout uses, so both
+// front doors honor [ignore].paths identically.
+func TestFixHonorsIgnorePaths(t *testing.T) {
+	det := []engine.NamedDetector{{Species: "unused-import", Detector: fakeDetector{findings: []engine.Finding{
+		{Species: "unused-import", File: "vendor/lib.go", Span: engine.Span{StartLine: 1}, Severity: engine.SeverityHigh}, // ignored
+		{Species: "unused-import", File: "src/app.go", Span: engine.Span{StartLine: 2}, Severity: engine.SeverityHigh},    // kept
+	}}}}
+	recipes := map[string]SpeciesRecipe{"unused-import": {
+		Fixer:       fakeFixer{fixer: "deterministic (delete-match)"},
+		NewVerifier: func(engine.Finding) engine.Verifier { return passVerifier{} },
+		AutoApply:   true,
+	}}
+	opts := newDriveOpts(t, recipes, det)
+	opts.Scope.IgnoreGlobs = []string{"vendor/"}
+
+	var buf bytes.Buffer
+	res, err := Drive(context.Background(), &buf, opts)
+	if err != nil {
+		t.Fatalf("Drive: %v", err)
+	}
+	// Only the non-ignored finding becomes a fix task that verifies and stages.
+	if res.Verified != 1 || res.Staged != 1 {
+		t.Errorf("expected exactly 1 verified+staged (the non-ignored finding), got verified=%d staged=%d", res.Verified, res.Staged)
+	}
+
+	records, err := stage.New(opts.Store, "fixrun").ListRecords()
+	if err != nil {
+		t.Fatalf("ListRecords: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 staged record, got %d (an ignored path must not produce a fix task)", len(records))
+	}
+	if records[0].Finding.File != "src/app.go" {
+		t.Errorf("staged record file = %q, want src/app.go (vendor/ must be ignored)", records[0].Finding.File)
+	}
+}
+
 // TestFixApplyOnlyTrustedSpecies proves --apply auto-lands diffs from a trusted
 // species (auto_apply true) while an untrusted species (auto_apply false) stays
 // staged in the SAME run (ADR-0002 per-species trust).

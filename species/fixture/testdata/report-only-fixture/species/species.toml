@@ -1,0 +1,16 @@
+name        = "report-only-fixture"
+description = "Fixture species (Sprint 022 Finding 4): a first-class report-only species (fix.kind=none) used to prove a none-kind manifest loads, validates, and reports via scout WITHOUT writing the working tree. It flags bare panic() calls as a triage signal and proposes no change."
+severity    = "low"
+languages   = ["go"]
+enabled     = false
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# Report-only: fix.kind="none" means this species proposes no change, so it
+# declares NO [fix].transform and NO [verify].checks. This is the first-class
+# manifest kind that replaces the fake [fix]/[verify] workaround (Sprint 019
+# ENGINE-GAP #2); `ant scout` reports the findings and changes nothing.
+[fix]
+kind = "none"

@@ -1,0 +1,22 @@
+name        = "capabilities-sample"
+description = "Command-detector sample exercising explicit capability metadata: an author sets requires_tool (the loader cannot derive which binary a command script needs) and overrides the inferred requires_network."
+severity    = "medium"
+languages   = ["go"]
+
+# Capability metadata (Sprint 022 Future-Proofing #3). requires_exec is left
+# unset so the loader infers it from the command detector; requires_tool and
+# requires_network are explicit — a command script's external tool and network
+# use are not derivable from the kinds alone.
+requires_tool    = "jq"
+requires_network = true
+
+[detector]
+kind   = "command"
+script = "detect.sh"
+
+[fix]
+kind      = "deterministic"
+transform = "delete-match"
+
+[verify]
+checks = ["detector-clears"]
