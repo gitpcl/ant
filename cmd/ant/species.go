@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"path/filepath"
 	"text/tabwriter"
 
 	"github.com/gitpcl/ant/internal/engine/config"
@@ -51,7 +50,7 @@ func newSpeciesInstallCmd() *cobra.Command {
 func runSpeciesInstall(cmd *cobra.Command, args []string) error {
 	url := args[0]
 	path, _ := cmd.Flags().GetString("path")
-	dest := filepath.Join(path, userSpeciesRoot)
+	dest := userSpeciesRootFor(path)
 
 	installed, err := species.Install(cmd.Context(), species.InstallOptions{
 		URL:      url,
@@ -96,7 +95,7 @@ func newSpeciesListCmd() *cobra.Command {
 // seam and renders.
 func runSpeciesList(cmd *cobra.Command, args []string) error {
 	path, _ := cmd.Flags().GetString("path")
-	userRoot := filepath.Join(path, userSpeciesRoot)
+	userRoot := userSpeciesRootFor(path)
 
 	cfg, _, err := config.Load(configFileOrDefault(configPathFlag(cmd)))
 	if err != nil {
@@ -198,7 +197,7 @@ func newSpeciesRemoveCmd() *cobra.Command {
 func runSpeciesRemove(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	path, _ := cmd.Flags().GetString("path")
-	userRoot := filepath.Join(path, userSpeciesRoot)
+	userRoot := userSpeciesRootFor(path)
 
 	if err := species.Remove(species.RemoveOptions{
 		Name:     name,

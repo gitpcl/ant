@@ -76,6 +76,7 @@ Trust is the heart of the product (and the reason you can let it touch your code
 - **Per-species trust, no global switch.** `ant.toml` overrides a species' default; there is no "trust everything" flag.
 - **Freshly-installed species are forced propose-only** until you've reviewed them once — *regardless* of what their manifest claims. Installing a community species can never auto-apply on first run.
 - **`ant species install` runs no repo code.** It clones, validates structure, and copies only well-formed species folders. A repo's `verify.sh` / `Makefile` / `go:generate` never executes at install time.
+- **Trust state lives on your machine, not in the repo.** "Reviewed once" state is stored in a user-local directory (`$ANT_TRUST_HOME` or `<os-user-config-dir>/ant/trust/`), keyed by the repo's absolute path — so a repository you merely scan can't ship its own trust state to grant its species auto-apply or scan-time script exec.
 
 ---
 

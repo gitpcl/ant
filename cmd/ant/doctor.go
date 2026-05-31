@@ -42,7 +42,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	report := doctor.Run(doctor.Options{
 		Root:            path,
 		ConfigPath:      configFileOrDefault(configPathFlag(cmd)),
-		SpeciesUserRoot: userSpeciesRoot,
+		SpeciesUserRoot: userSpeciesRootFor(path),
 	})
 
 	format := doctor.FormatHuman

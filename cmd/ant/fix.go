@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/gitpcl/ant/internal/engine"
 	"github.com/gitpcl/ant/internal/engine/apply"
@@ -68,7 +69,9 @@ func runFix(cmd *cobra.Command, args []string) error {
 	}
 	antFilter := stringSlice(cmd, "ant")
 
-	resolved, err := species.NewResolver(userSpeciesRoot, nil).Resolve(cfg)
+	// Discover user species under the target path (not the process CWD),
+	// consistent with the Store rooted at the same path below.
+	resolved, err := species.NewResolver(userSpeciesRootFor(path), nil).Resolve(cfg)
 	if err != nil {
 		return err // a malformed species manifest → operational (exit 2)
 	}
@@ -172,8 +175,15 @@ func runFix(cmd *cobra.Command, args []string) error {
 	return err
 }
 
-// userSpeciesRoot is where on-disk user species are discovered (TECHSPEC §6.3).
+// userSpeciesRoot is where on-disk user species are discovered, relative to the
+// target path (TECHSPEC §6.3).
 const userSpeciesRoot = ".ant/species"
+
+// userSpeciesRootFor resolves the on-disk user-species directory for a target
+// path. It is the one place the "user species live at <path>/.ant/species, NOT
+// the process CWD" rule lives, so scout/fix/doctor/species all discover the same
+// tree for a given path argument.
+func userSpeciesRootFor(path string) string { return filepath.Join(path, userSpeciesRoot) }
 
 // isTTY reports whether stdout is an interactive terminal. The TUI is attached
 // only when it is; piped/redirected/CI output gets the --json stream instead

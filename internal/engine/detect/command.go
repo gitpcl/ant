@@ -53,11 +53,33 @@ type commandDetector struct {
 	// exercise the parse path with a recorded payload and the missing-binary
 	// path without a live interpreter (mirrors astgrepDetector.runner).
 	runner commandRunner
+
+	// scanSafe records whether this detector has cleared the scan-time trust gate
+	// and may therefore run on the read-only `ant scout` path. It is FALSE by
+	// default: a command detector execs a species-supplied script, so it is unsafe
+	// to scan with UNLESS its caller (the composition root) has already resolved
+	// the per-species trust decision (species.ScriptExecAllowed) and opted in via
+	// WithScanSafe. The mechanism stays here; the policy stays at the call site —
+	// scout's assertScanSafe still rejects any command detector that was not
+	// explicitly trust-marked (defense-in-depth, Sprint 022).
+	scanSafe bool
 }
 
-// compile-time assertion that the adapter satisfies the engine.Detector
-// interface (TECHSPEC §5.1).
-var _ engine.Detector = (*commandDetector)(nil)
+// compile-time assertions that the adapter satisfies the engine.Detector
+// interface (TECHSPEC §5.1) and the ScanSafeDetector marker (its ScanSafe()
+// answer is trust-gated, set per construction by the composition root).
+var (
+	_ engine.Detector         = (*commandDetector)(nil)
+	_ engine.ScanSafeDetector = (*commandDetector)(nil)
+)
+
+// ScanSafe reports whether this command detector cleared the scan-time trust gate
+// at construction. It is a pure marker (no behavior): scout admits the detector
+// onto the read-only path only when the composition root built it with
+// WithScanSafe(true) for a species whose ScriptExecAllowed is true (a vetted
+// built-in, or an installed species the human has reviewed once). An untrusted
+// command detector reports false and is rejected by scout's invariant.
+func (d *commandDetector) ScanSafe() bool { return d.scanSafe }
 
 // CommandOption configures a commandDetector.
 type CommandOption func(*commandDetector)
@@ -80,6 +102,17 @@ func WithCommandTimeout(t time.Duration) CommandOption {
 		if t > 0 {
 			d.timeout = t
 		}
+	}
+}
+
+// WithScanSafe marks the detector as cleared to run on the read-only scout path.
+// Only the composition root calls this, and ONLY after it has resolved the
+// species' scan-time trust decision (species.ScriptExecAllowed) — i.e. for a
+// vetted built-in or a reviewed installed species. It is the single opt-in that
+// turns the default-unsafe command detector into one scout will admit.
+func WithScanSafe(safe bool) CommandOption {
+	return func(d *commandDetector) {
+		d.scanSafe = safe
 	}
 }
 

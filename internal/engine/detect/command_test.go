@@ -159,3 +159,24 @@ func TestCommandTimeoutIsOperational(t *testing.T) {
 		t.Errorf("timeout must classify as engine.ErrOperational, got %v", err)
 	}
 }
+
+// TestCommandScanSafeMarker proves the command detector's scan-time trust marker
+// is OFF by default (so scout's assertScanSafe rejects an unvetted command
+// detector) and ON only when the composition root opts in via WithScanSafe — the
+// mechanism behind colony.ScoutDetectors admitting a trusted command species onto
+// the read-only path (Sprint 022).
+func TestCommandScanSafeMarker(t *testing.T) {
+	def := NewCommand("deps", "sh", "detect.sh")
+	safe, ok := def.(engine.ScanSafeDetector)
+	if !ok {
+		t.Fatal("command detector must implement engine.ScanSafeDetector")
+	}
+	if safe.ScanSafe() {
+		t.Error("a command detector must be scan-UNSAFE by default (no trust opt-in)")
+	}
+
+	trusted := NewCommand("deps", "sh", "detect.sh", WithScanSafe(true))
+	if !trusted.(engine.ScanSafeDetector).ScanSafe() {
+		t.Error("WithScanSafe(true) must mark the command detector scan-safe for the read-only path")
+	}
+}

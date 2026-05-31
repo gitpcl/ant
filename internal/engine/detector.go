@@ -23,23 +23,24 @@ type NamedDetector struct {
 }
 
 // ScanSafeDetector marks a Detector that is SAFE to run on the read-only `ant
-// scout` path — i.e. it performs NO species-supplied script execution. Only
-// vetted, embedded detectors (the ast-grep adapter) implement it; the `command`
-// script-escape-hatch detector deliberately does NOT.
+// scout` path. The ast-grep adapter is unconditionally safe (it runs no
+// species-supplied script). The `command` script-escape-hatch detector is safe
+// ONLY when its caller has cleared the scan-time trust gate and built it with
+// detect.WithScanSafe(true) — a vetted built-in or a reviewed installed species;
+// an untrusted command detector reports ScanSafe()==false and is rejected.
 //
-// SECURITY (Sprint 020, defense-in-depth): a `command` detector execs a
+// SECURITY (Sprint 020/022, defense-in-depth): a `command` detector execs a
 // species-supplied script at SCAN time, gated on the resolver's per-species trust
-// (species.ScriptExecTrust → TrustDecision.ScriptExecAllowed) — but that gate
-// lives on the `ant fix` composition root (colony.BuildRecipes). Scout composes
-// its detector set separately (detect.Builtins) and does NOT consult the trust
-// resolver, so scout MUST admit only ScanSafe detectors: if a future change ever
-// points scout at resolved user/command detectors, an unvetted script could
-// otherwise exec at scan time, bypassing the trust gate. Scout enforces this
-// invariant by rejecting any detector that is not ScanSafe (fail loud, never
-// silently exec) — see scout.Run. The method is a pure marker (no behavior); the
-// interface lives here in engine so scout asserts against an INTERFACE, not a
-// detect-package concrete type, preserving scout's "depends only on the Detector
-// interface" boundary.
+// (species.ScriptExecTrust → TrustDecision.ScriptExecAllowed). Both front doors
+// now consult that authority: `ant fix` via colony.BuildRecipes, and `ant scout`
+// via colony.ScoutDetectors (which takes TrustDecisions and only WithScanSafe-
+// marks a command detector whose ScriptExecAllowed is true). Scout still enforces
+// the invariant by rejecting any detector that is not ScanSafe (fail loud, never
+// silently exec) — see scout.Run — so an UNVETTED script can never reach the
+// read-only path even if a future change miswires the composition. The method is
+// a pure marker (no behavior); the interface lives here in engine so scout asserts
+// against an INTERFACE, not a detect-package concrete type, preserving scout's
+// "depends only on the Detector interface" boundary.
 type ScanSafeDetector interface {
 	Detector
 	// ScanSafe reports that this detector runs no species-supplied script and is

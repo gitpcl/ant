@@ -24,6 +24,23 @@ func resolveBuiltins(t *testing.T, cfg config.Config) []species.Resolved {
 	return resolved
 }
 
+// decisionsFor wraps resolved species into trust decisions for ScoutDetectors.
+// allow sets ScriptExecAllowed uniformly: for the all-ast-grep built-in set it is
+// irrelevant to the detector kind (only command species consult it), so the tests
+// that assert species MEMBERSHIP pass allow=true; the command-trust tests set it
+// explicitly to exercise the trusted vs blocked branches.
+func decisionsFor(resolved []species.Resolved, allow bool) []species.TrustDecision {
+	out := make([]species.TrustDecision, 0, len(resolved))
+	for _, r := range resolved {
+		out = append(out, species.TrustDecision{
+			Resolved:           r,
+			EffectiveAutoApply: r.EffectiveAutoApply,
+			ScriptExecAllowed:  allow,
+		})
+	}
+	return out
+}
+
 // detectorSpecies returns the sorted set of species names a detector set covers.
 func detectorSpecies(dets []engine.NamedDetector) []string {
 	out := make([]string, 0, len(dets))
@@ -52,7 +69,7 @@ func contains(names []string, want string) bool {
 // table is demoted to a fallback with a test proving parity with the resolver.
 func TestScoutDetectors_ParityWithBuiltinsFallback(t *testing.T) {
 	resolved := resolveBuiltins(t, config.Config{})
-	scoutDets := ScoutDetectors(resolved, "")
+	scoutDets := ScoutDetectors(decisionsFor(resolved, true), "")
 
 	scoutNames := detectorSpecies(scoutDets)
 	for _, fb := range detect.Builtins("") {
@@ -82,7 +99,7 @@ func TestScoutDetectors_ParityWithBuiltinsFallback(t *testing.T) {
 // 2-species table.
 func TestScoutDetectors_ThirdSpeciesAppears(t *testing.T) {
 	resolved := resolveBuiltins(t, config.Config{})
-	names := detectorSpecies(ScoutDetectors(resolved, ""))
+	names := detectorSpecies(ScoutDetectors(decisionsFor(resolved, true), ""))
 
 	for _, want := range []string{"dead-code", "unused-import", "deep-nesting"} {
 		if !contains(names, want) {
@@ -103,7 +120,7 @@ func TestScoutDetectors_DisableBuiltinViaConfig(t *testing.T) {
 		"deep-nesting": {Enabled: &off},
 	}}
 	resolved := resolveBuiltins(t, cfg)
-	names := detectorSpecies(ScoutDetectors(resolved, ""))
+	names := detectorSpecies(ScoutDetectors(decisionsFor(resolved, true), ""))
 
 	if contains(names, "deep-nesting") {
 		t.Errorf("deep-nesting was disabled via ant.toml but still appears in scout detectors %v", names)
@@ -138,7 +155,7 @@ func TestScoutDetectors_EqualsFixSpeciesSet(t *testing.T) {
 		t.Fatalf("BuildRecipes: %v", err)
 	}
 
-	scoutNames := detectorSpecies(ScoutDetectors(resolved, ""))
+	scoutNames := detectorSpecies(ScoutDetectors(decisionsFor(resolved, true), ""))
 	fixNames := detectorSpecies(fixDetectors)
 
 	if len(scoutNames) != len(fixNames) {
@@ -151,11 +168,10 @@ func TestScoutDetectors_EqualsFixSpeciesSet(t *testing.T) {
 	}
 }
 
-// TestScoutDetectors_CommandSpeciesBlockedNotDropped proves a command-detector
-// species surfaces on the read-only scout path as a SCAN-SAFE blocked detector —
-// visible (emits a finding), never silently dropped, and never running its script.
-func TestScoutDetectors_CommandSpeciesBlockedNotDropped(t *testing.T) {
-	resolved := []species.Resolved{{
+// commandSpecies is an UNTRUSTED user command-detector species used by the
+// command-trust tests below.
+func commandSpecies() []species.Resolved {
+	return []species.Resolved{{
 		Manifest: species.Manifest{
 			Name:     "needs-review-deps",
 			Detector: species.Detect{Kind: species.DetectKindCommand, Script: "detect.sh"},
@@ -163,13 +179,20 @@ func TestScoutDetectors_CommandSpeciesBlockedNotDropped(t *testing.T) {
 		EffectiveEnabled: true,
 		Origin:           species.OriginUser,
 	}}
-	dets := ScoutDetectors(resolved, "")
+}
+
+// TestScoutDetectors_UntrustedCommandSpeciesBlockedNotDropped proves an UNTRUSTED
+// command-detector species (ScriptExecAllowed=false) surfaces on the read-only
+// scout path as a SCAN-SAFE blocked detector — visible (emits a finding), never
+// silently dropped, and never running its script.
+func TestScoutDetectors_UntrustedCommandSpeciesBlockedNotDropped(t *testing.T) {
+	dets := ScoutDetectors(decisionsFor(commandSpecies(), false), "")
 	if len(dets) != 1 {
 		t.Fatalf("command species must NOT be dropped: got %d detectors, want 1", len(dets))
 	}
 	safe, ok := dets[0].Detector.(engine.ScanSafeDetector)
 	if !ok || !safe.ScanSafe() {
-		t.Fatal("a command species' scout detector must be scan-safe (it runs no script)")
+		t.Fatal("an untrusted command species' scout detector must be the scan-safe blocked stand-in")
 	}
 	findings, err := dets[0].Detector.Detect(context.Background(), engine.Scope{Root: t.TempDir()})
 	if err != nil {
@@ -177,5 +200,31 @@ func TestScoutDetectors_CommandSpeciesBlockedNotDropped(t *testing.T) {
 	}
 	if len(findings) != 1 || findings[0].Species != "needs-review-deps" {
 		t.Fatalf("command species must surface a blocked finding (visible, not dropped); got %+v", findings)
+	}
+	if findings[0].Meta["blocked"] != "command-detector" {
+		t.Fatalf("untrusted command species must surface the BLOCKED stand-in, not the real detector; got %+v", findings[0])
+	}
+}
+
+// TestScoutDetectors_TrustedCommandSpeciesRuns proves a TRUSTED command-detector
+// species (ScriptExecAllowed=true — a vetted built-in or reviewed install) gets
+// its REAL command detector on the scout path: scan-safe (so scout admits it) and
+// NOT the blocked stand-in. This is the Sprint 022 partial follow-up — built-in
+// command species (unused-dependency, dead-config, hardcoded-secret, …) are now
+// actually detectable by `ant scout`/CI.
+func TestScoutDetectors_TrustedCommandSpeciesRuns(t *testing.T) {
+	dets := ScoutDetectors(decisionsFor(commandSpecies(), true), "")
+	if len(dets) != 1 {
+		t.Fatalf("trusted command species must produce one detector, got %d", len(dets))
+	}
+	safe, ok := dets[0].Detector.(engine.ScanSafeDetector)
+	if !ok || !safe.ScanSafe() {
+		t.Fatal("a trusted command species' scout detector must be scan-marked so scout admits it")
+	}
+	// The real command detector over a missing script errors (or yields no
+	// findings); it must NOT return the blocked stand-in's single inert finding.
+	findings, err := dets[0].Detector.Detect(context.Background(), engine.Scope{Root: t.TempDir()})
+	if err == nil && len(findings) == 1 && findings[0].Meta["blocked"] != "" {
+		t.Fatal("trusted command species must run the REAL detector, not the blocked stand-in")
 	}
 }

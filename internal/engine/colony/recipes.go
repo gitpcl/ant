@@ -143,20 +143,22 @@ func BuildRecipes(decisions []species.TrustDecision, antFilter []string, rulesRo
 // embedded layout); the [detect] alias is collapsed to [detector] identically.
 //
 // SECURITY (Sprint 020/022): a `command` detector execs a species-supplied script
-// at SCAN time — a broader surface than the fix-time tool runner — and scout is
-// the read-only pass that does NOT consult the per-species trust resolver. Rather
-// than route an unvetted script onto the read-only path (scout.Run rejects it by
-// the ScanSafe invariant) OR silently drop the species, a command-detector
-// species surfaces as a scan-safe BLOCKED detector (detect.NewScoutBlocked): it
-// runs no script and emits a single "blocked until reviewed" finding so the
-// species is VISIBLE in scout output, naming `ant fix`/`ant review` as the path
-// that clears the scan-time trust gate. This satisfies the Sprint 022 deliverable
-// ("command-detector species surface as blocked-until-reviewed, never silently
-// dropped") without weakening the trust gate, since the actual script exec is
-// still gated by ScriptExecAllowed on the fix path.
-func ScoutDetectors(resolved []species.Resolved, rulesRoot string) []engine.NamedDetector {
-	out := make([]engine.NamedDetector, 0, len(resolved))
-	for _, r := range resolved {
+// at SCAN time — a broader surface than the fix-time tool runner — so scout MUST
+// consult the per-species trust decision before running one. ScoutDetectors takes
+// resolved TRUST DECISIONS (not bare resolved species) so it applies the SAME
+// scan-time trust authority `ant fix` uses (species.ScriptExecAllowed): a vetted
+// built-in or a reviewed installed species runs its REAL command detector (built
+// with WithScanSafe so scout's invariant admits it), while an untrusted/never-
+// reviewed user species surfaces as a scan-safe BLOCKED detector
+// (detect.NewScoutBlocked) — visible in scout output, naming `ant fix`/`ant
+// review` as the path that clears the gate, but running NO script. This makes
+// built-in command species (unused-dependency, dead-config, hardcoded-secret, …)
+// actually detectable by `ant scout`/CI while keeping unvetted third-party
+// scripts off the read-only path (Sprint 022 Finding 1, partial follow-up).
+func ScoutDetectors(decisions []species.TrustDecision, rulesRoot string) []engine.NamedDetector {
+	out := make([]engine.NamedDetector, 0, len(decisions))
+	for _, dec := range decisions {
+		r := dec.Resolved
 		if !r.EffectiveEnabled {
 			continue // disabled species (ai-slop, or ant.toml enabled=false) do not scan
 		}
@@ -167,16 +169,48 @@ func ScoutDetectors(resolved []species.Resolved, rulesRoot string) []engine.Name
 		}
 		switch d.Kind {
 		case species.DetectKindCommand:
-			out = append(out, engine.NamedDetector{Species: m.Name, Detector: detect.NewScoutBlocked(m.Name)})
-		default: // ast-grep is the default ("" or "ast-grep")
-			rule := d.Rule
-			if rulesRoot != "" && rule != "" {
-				rule = rulesRoot + "/" + m.Name + "/" + rule
+			if !dec.ScriptExecAllowed {
+				// Untrusted command species: visible but inert until reviewed.
+				out = append(out, engine.NamedDetector{Species: m.Name, Detector: detect.NewScoutBlocked(m.Name)})
+				continue
 			}
-			out = append(out, engine.NamedDetector{Species: m.Name, Detector: detect.NewASTGrep(m.Name, rule)})
+			// Trusted (vetted built-in or reviewed installed): run the REAL command
+			// detector, trust-marked (WithScanSafe) so scout's assertScanSafe admits it.
+			out = append(out, engine.NamedDetector{
+				Species:  m.Name,
+				Detector: commandDetectorFor(m, d, rulesRoot, detect.WithScanSafe(true)),
+			})
+		default: // ast-grep is the default ("" or "ast-grep")
+			out = append(out, engine.NamedDetector{Species: m.Name, Detector: detect.NewASTGrep(m.Name, rulesFile(rulesRoot, m.Name, d.Rule))})
 		}
 	}
 	return out
+}
+
+// rulesFile resolves a species' rule/script FILE under rulesRoot. The manifest
+// path is relative to the species FOLDER (e.g. "detect.yml" / "detect.sh") and
+// the materialized built-in tree lays files out as <rulesRoot>/<species>/<file>,
+// so the species name is joined in between. An empty rulesRoot or file yields the
+// bare manifest-relative path (recorded fixtures need no disk file). It is the one
+// place the scan and fix detector builders agree on this layout.
+func rulesFile(rulesRoot, species, file string) string {
+	if rulesRoot == "" || file == "" {
+		return file
+	}
+	return rulesRoot + "/" + species + "/" + file
+}
+
+// commandDetectorFor builds a command (script escape-hatch) detector for m,
+// resolving the script under rulesRoot and defaulting the interpreter. opts let
+// the scout composition pass detect.WithScanSafe(true) for a trusted species; the
+// fix path passes none. Shared by ScoutDetectors and buildDetector so the two
+// front doors construct identical command detectors.
+func commandDetectorFor(m species.Manifest, d species.Detect, rulesRoot string, opts ...detect.CommandOption) engine.Detector {
+	interp := d.Interpreter
+	if interp == "" {
+		interp = species.DefaultScriptInterpreter
+	}
+	return detect.NewCommand(m.Name, interp, rulesFile(rulesRoot, m.Name, d.Script), opts...)
 }
 
 // buildDetector constructs the species' detector. ast-grep is the default;
@@ -199,25 +233,13 @@ func buildDetector(m species.Manifest, rulesRoot string, commandExec bool) (engi
 	}
 	switch d.Kind {
 	case species.DetectKindASTGrep, "":
-		rule := d.Rule
-		if rulesRoot != "" && rule != "" {
-			rule = rulesRoot + "/" + m.Name + "/" + rule
-		}
-		return detect.NewASTGrep(m.Name, rule), nil
+		return detect.NewASTGrep(m.Name, rulesFile(rulesRoot, m.Name, d.Rule)), nil
 	case species.DetectKindCommand:
 		if !commandExec {
 			// SECURITY: refuse to run an untrusted species' detector script.
 			return blockedDetector{species: m.Name}, nil
 		}
-		script := d.Script
-		if rulesRoot != "" && script != "" {
-			script = rulesRoot + "/" + m.Name + "/" + script
-		}
-		interp := d.Interpreter
-		if interp == "" {
-			interp = species.DefaultScriptInterpreter
-		}
-		return detect.NewCommand(m.Name, interp, script), nil
+		return commandDetectorFor(m, d, rulesRoot), nil
 	default:
 		return nil, fmt.Errorf("%w: species %q detector kind %q not wired for fix", engine.ErrOperational, m.Name, d.Kind)
 	}

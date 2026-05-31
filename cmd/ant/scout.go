@@ -8,6 +8,7 @@ import (
 	"github.com/gitpcl/ant/internal/engine/config"
 	"github.com/gitpcl/ant/internal/engine/scout"
 	"github.com/gitpcl/ant/internal/engine/species"
+	store "github.com/gitpcl/ant/internal/engine/store"
 	"github.com/spf13/cobra"
 )
 
@@ -86,14 +87,24 @@ func runScout(cmd *cobra.Command, args []string) error {
 	}
 
 	// Resolve the full species set through the SAME path `ant fix` uses
-	// (species.NewResolver(userSpeciesRoot, nil).Resolve over the loaded config),
-	// so scout reports every built-in + installed + config-enabled species and
-	// honors enabled/disabled identically — no more hard-coded 2-species table
-	// (Sprint 022 Finding 1). The CLI does no merge/precedence logic itself; the
-	// resolver owns it.
-	resolved, err := species.NewResolver(userSpeciesRoot, nil).Resolve(cfg)
+	// (species.NewResolver(...).Resolve over the loaded config), so scout reports
+	// every built-in + installed + config-enabled species and honors enabled/
+	// disabled identically — no more hard-coded 2-species table (Sprint 022
+	// Finding 1). User species resolve under the target path (see
+	// userSpeciesRootFor). The CLI does no merge/precedence logic; the resolver owns it.
+	resolved, err := species.NewResolver(userSpeciesRootFor(path), nil).Resolve(cfg)
 	if err != nil {
 		return err // a malformed species manifest → operational (exit 2)
+	}
+
+	// Resolve the per-species TRUST decision against the target's Store, the SAME
+	// authority `ant fix` uses (species.ResolveTrust). Scout needs it so a vetted
+	// built-in or reviewed installed command-detector species runs its real
+	// detector, while an untrusted user species stays blocked-until-reviewed —
+	// the trust gate now lives on the read-only path too, not only on fix.
+	decisions, err := species.ResolveTrust(resolved, store.New(path))
+	if err != nil {
+		return err // operational (exit 2): cannot read trust state
 	}
 
 	// Materialize the embedded built-in rule files to disk so the ast-grep
@@ -107,13 +118,14 @@ func runScout(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanupRules()
 
-	// Build scout's detector set from the resolved species via the colony
-	// composition root — the SAME species→detector mapping `ant fix` uses. A
-	// command-detector species surfaces as a scan-safe blocked-until-reviewed
+	// Build scout's detector set from the resolved trust decisions via the colony
+	// composition root — the SAME species→detector mapping `ant fix` uses. Trusted
+	// command-detector species (vetted built-ins, reviewed installs) run their real
+	// detector; untrusted ones surface as a scan-safe blocked-until-reviewed
 	// detector (never silently dropped, never an unvetted scan-time script exec).
 	opts := scout.Options{
 		Scope:          scope,
-		Detectors:      colony.ScoutDetectors(resolved, rulesRoot),
+		Detectors:      colony.ScoutDetectors(decisions, rulesRoot),
 		SeverityFilter: severityFilter,
 		AntFilter:      scope.Species,
 	}
