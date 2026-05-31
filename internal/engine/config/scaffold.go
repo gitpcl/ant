@@ -5,12 +5,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gitpcl/ant/internal/engine"
 )
 
 // DefaultConfigName is the conventional ant.toml filename in a project root.
 const DefaultConfigName = "ant.toml"
+
+// antIgnoreEntry is the .gitignore line that excludes Ant's runtime state
+// directory. `ant fix` writes staged diffs and run metadata under .ant/ in the
+// working tree (the trust store lives user-local, not here), so .ant/ is
+// machine-local state that must never be committed.
+const antIgnoreEntry = ".ant/"
 
 // ErrConfigExists reports that Scaffold refused to overwrite an existing config
 // because --force was not given. It wraps engine.ErrOperational so the CLI maps
@@ -82,4 +89,58 @@ func Scaffold(path string, force bool) (string, error) {
 		return "", fmt.Errorf("%w: write %q: %v", engine.ErrOperational, abs, err)
 	}
 	return abs, nil
+}
+
+// EnsureAntIgnored makes sure the .gitignore beside the config file ignores
+// Ant's .ant/ state directory, so a user who runs `ant init` does not
+// accidentally commit machine-local run state. It is idempotent: if an entry
+// already covers .ant/ it changes nothing and reports added=false. It creates
+// .gitignore when absent, or appends a single line (preserving existing content
+// and ensuring a trailing newline) otherwise. configPath locates the project
+// dir (its parent); "" means the current directory. A read/write failure is
+// operational (exit 2).
+func EnsureAntIgnored(configPath string) (added bool, gitignorePath string, err error) {
+	dir := "."
+	if configPath != "" {
+		abs, aerr := filepath.Abs(configPath)
+		if aerr != nil {
+			return false, "", fmt.Errorf("%w: resolve %q: %v", engine.ErrOperational, configPath, aerr)
+		}
+		dir = filepath.Dir(abs)
+	}
+	gitignorePath = filepath.Join(dir, ".gitignore")
+
+	data, rerr := os.ReadFile(gitignorePath)
+	if rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+		return false, gitignorePath, fmt.Errorf("%w: read %q: %v", engine.ErrOperational, gitignorePath, rerr)
+	}
+	if alreadyIgnoresAnt(string(data)) {
+		return false, gitignorePath, nil
+	}
+
+	// Append the entry, preserving existing content and a clean newline boundary.
+	out := append([]byte(nil), data...)
+	if len(out) > 0 && out[len(out)-1] != '\n' {
+		out = append(out, '\n')
+	}
+	out = append(out, antIgnoreEntry...)
+	out = append(out, '\n')
+	if werr := os.WriteFile(gitignorePath, out, 0o644); werr != nil {
+		return false, gitignorePath, fmt.Errorf("%w: write %q: %v", engine.ErrOperational, gitignorePath, werr)
+	}
+	return true, gitignorePath, nil
+}
+
+// alreadyIgnoresAnt reports whether a .gitignore body already excludes the .ant/
+// state dir. It matches the common spellings on a line of their own (ignoring
+// surrounding whitespace), which covers what EnsureAntIgnored and hand edits
+// write; it does not attempt full gitignore-pattern semantics.
+func alreadyIgnoresAnt(body string) bool {
+	for _, line := range strings.Split(body, "\n") {
+		switch strings.TrimSpace(line) {
+		case ".ant/", ".ant", "/.ant/", "/.ant":
+			return true
+		}
+	}
+	return false
 }

@@ -95,3 +95,72 @@ func TestScaffoldForceOverwrites(t *testing.T) {
 		t.Error("forced scaffold should contain the full template")
 	}
 }
+
+// TestEnsureAntIgnoredCreatesFile asserts that, when no .gitignore exists beside
+// the config, EnsureAntIgnored creates one containing the .ant/ entry.
+func TestEnsureAntIgnoredCreatesFile(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "ant.toml")
+
+	added, gi, err := EnsureAntIgnored(cfg)
+	if err != nil {
+		t.Fatalf("EnsureAntIgnored: %v", err)
+	}
+	if !added {
+		t.Error("added = false, want true (a fresh .gitignore should get the entry)")
+	}
+	body, err := os.ReadFile(gi)
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+	if !alreadyIgnoresAnt(string(body)) {
+		t.Errorf(".gitignore does not ignore .ant/ after EnsureAntIgnored:\n%s", body)
+	}
+}
+
+// TestEnsureAntIgnoredIsIdempotent asserts a second call (and an existing entry)
+// is a no-op that neither duplicates the line nor reports added.
+func TestEnsureAntIgnoredIsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "ant.toml")
+	gi := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(gi, []byte("node_modules/\n.ant/\n"), 0o644); err != nil {
+		t.Fatalf("seed .gitignore: %v", err)
+	}
+
+	added, _, err := EnsureAntIgnored(cfg)
+	if err != nil {
+		t.Fatalf("EnsureAntIgnored: %v", err)
+	}
+	if added {
+		t.Error("added = true, want false (.ant/ already ignored)")
+	}
+	body, _ := os.ReadFile(gi)
+	if got, want := string(body), "node_modules/\n.ant/\n"; got != want {
+		t.Errorf(".gitignore changed on idempotent call:\n got %q\nwant %q", got, want)
+	}
+}
+
+// TestEnsureAntIgnoredAppendsPreservingContent asserts an existing .gitignore
+// without the entry gets it appended, keeping prior lines and a clean newline
+// boundary (no glued-together lines).
+func TestEnsureAntIgnoredAppendsPreservingContent(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "ant.toml")
+	gi := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(gi, []byte("vendor/"), 0o644); err != nil { // no trailing newline
+		t.Fatalf("seed .gitignore: %v", err)
+	}
+
+	added, _, err := EnsureAntIgnored(cfg)
+	if err != nil {
+		t.Fatalf("EnsureAntIgnored: %v", err)
+	}
+	if !added {
+		t.Error("added = false, want true")
+	}
+	body, _ := os.ReadFile(gi)
+	if got, want := string(body), "vendor/\n.ant/\n"; got != want {
+		t.Errorf("append did not preserve content/newline:\n got %q\nwant %q", got, want)
+	}
+}

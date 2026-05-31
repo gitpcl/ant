@@ -27,7 +27,18 @@ func newInitCmd() *cobra.Command {
 			if err != nil {
 				return err // ErrConfigExists / write failure → operational (exit 2)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", written)
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "wrote %s\n", written)
+
+			// Ensure Ant's machine-local run state (.ant/) is gitignored so a fresh
+			// project never commits it. Idempotent — silent if already ignored.
+			added, gitignore, err := config.EnsureAntIgnored(path)
+			if err != nil {
+				return err // read/write failure → operational (exit 2)
+			}
+			if added {
+				fmt.Fprintf(out, "added %s to %s\n", ".ant/", gitignore)
+			}
 			return nil
 		},
 	}
