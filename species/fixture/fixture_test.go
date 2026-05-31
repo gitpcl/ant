@@ -293,19 +293,12 @@ func cases() []fixture.Case {
 			GoldenPath:    filepath.Join("testdata", "dead-config", "fix.golden"),
 			RequiredTools: []string{"python3"},
 		},
-		{
-			// duplicate-ci-step (Sprint 020 deps): the command detector flags a `- run:`
-			// step duplicated across jobs in .github/workflows/ci.yml; the deterministic
-			// delete-match fix removes the duplicate step line; the command: verifier
-			// runs a pure-stdlib YAML structural lint (python3) to prove the workflow
-			// stays parseable (no tabs, even indentation, no emptied `steps:`).
-			// RequiredTools=[python3] gates the case on python3 like dead-config.
-			Name:          "duplicate-ci-step",
-			SpeciesDir:    filepath.Join(speciesRoot, "duplicate-ci-step"),
-			RepoDir:       filepath.Join("testdata", "duplicate-ci-step", "repo"),
-			GoldenPath:    filepath.Join("testdata", "duplicate-ci-step", "fix.golden"),
-			RequiredTools: []string{"python3"},
-		},
+		// duplicate-ci-step is REPORT-ONLY (fix.kind=none) and is NOT a fix case —
+		// see TestDuplicateCIStepReportOnly, which drives it through the detect-only
+		// harness (findings produced, working tree byte-unchanged). It previously had
+		// a deterministic delete-match fix that destructively stripped a `run:` line
+		// repeated across isolated-runner jobs (it broke a real deploy job's
+		// install/build); the species now reports the smell and proposes no change.
 		{
 			// hardcoded-secret is the Sprint 021 P6 SECURITY-stage SIGNATURE species:
 			// remediation, not just detection. The command detector (detect.sh) flags
@@ -797,6 +790,21 @@ func TestTodoExpiredReportOnly(t *testing.T) {
 		SpeciesDir: filepath.Join(speciesRoot, "todo-expired"),
 		RepoDir:    filepath.Join("testdata", "todo-expired", "repo"),
 	}, 3)
+}
+
+// TestDuplicateCIStepReportOnly drives the duplicate-ci-step species through the
+// detect-only harness: it asserts the command detector reports the one `run:`
+// command repeated across the fixture's two jobs (`echo setup`) but produces NO
+// diff and leaves the working tree byte-unchanged. This is the report-only
+// acceptance criterion AND the regression guard for the cross-job-deletion bug:
+// the species must never again mechanically remove a `run:` step (which broke a
+// real deploy job that needed its own install/build on an isolated runner).
+func TestDuplicateCIStepReportOnly(t *testing.T) {
+	fixture.RunDetectOnlyCase(t, fixture.Case{
+		Name:       "duplicate-ci-step",
+		SpeciesDir: filepath.Join(speciesRoot, "duplicate-ci-step"),
+		RepoDir:    filepath.Join("testdata", "duplicate-ci-step", "repo"),
+	}, 1)
 }
 
 // TestReportOnlyFixtureSpecies proves the first-class report-only manifest kind

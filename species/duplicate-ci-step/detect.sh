@@ -1,11 +1,17 @@
 #!/bin/sh
 # duplicate-ci-step detector (Sprint 020 command escape hatch).
 #
-# Flags a CI step whose `run:` command is duplicated across the workflow YAML:
-# the same `- run: <command>` appearing on more than one line. Each occurrence
-# AFTER the first is reported as a consolidation candidate (the first is kept).
-# Cross-block analysis ast-grep cannot express (the duplication spans separate
-# jobs). Cleanup-scoped: it points out the duplicate so it can be consolidated.
+# Flags a CI step whose `run:` command appears in more than one job: the same
+# `- run: <command>` on more than one line. Each occurrence AFTER the first is
+# reported as a possible consolidation candidate (the first is kept). Cross-block
+# analysis ast-grep cannot express (the repetition spans separate jobs).
+#
+# REPORT-ONLY: this is advisory. Jobs run on isolated runners, so repeated setup/
+# build steps across jobs are frequently REQUIRED, not redundant — Ant reports the
+# smell and proposes NO change (the species declares fix.kind = "none"). Removing a
+# cross-job step is unsafe (it can strip a deploy job's install/build); real
+# consolidation is a human judgement call (reusable workflow / composite action /
+# artifact passing).
 #
 # Contract (detect/command.go): argv = <interpreter> <script> <scope-root>.
 # Output: JSON array of findings on stdout ("[]" = none). Hermetic: POSIX sh +
@@ -44,7 +50,7 @@ BEGIN { first = 1; printf "[" }
 		if (count[cmd] > 1) {
 			if (!first) printf ","
 			first = 0
-			printf "{\"file\":\".github/workflows/ci.yml\",\"line\":%d,\"severity\":\"low\",\"message\":\"CI step \\\"run: %s\\\" is duplicated across jobs; consolidate it into a reusable job/composite action/script\",\"snippet\":\"%s\",\"sourceLine\":\"%s\",\"ruleId\":\"duplicate-ci-step\"}", NR, esc(cmd), esc(line), esc(line)
+			printf "{\"file\":\".github/workflows/ci.yml\",\"line\":%d,\"severity\":\"low\",\"message\":\"CI step \\\"run: %s\\\" appears in more than one job; if the jobs run on separate runners this may be REQUIRED, otherwise consider a reusable workflow/composite action (report-only — Ant proposes no change)\",\"snippet\":\"%s\",\"sourceLine\":\"%s\",\"ruleId\":\"duplicate-ci-step\"}", NR, esc(cmd), esc(line), esc(line)
 		}
 	}
 }

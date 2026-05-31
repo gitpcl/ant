@@ -52,12 +52,15 @@
 // command: verifier + detector-clears), stale-dependency-pin (a duplicate/
 // conflicting require; normalize, same Go build/vet gate), dead-config (a config
 // key referenced nowhere in the tree; remove, gated by a config-parse command:
-// verifier that keeps the file parseable), and duplicate-ci-step (a CI step
-// duplicated across jobs; consolidate, gated by a YAML-parse command: verifier).
-// All four are deterministic delete-match removals/normalizations and ship
-// propose-only; unused-dependency notes that high-confidence ecosystems could
-// graduate to auto_apply later. Their fixtures are HERMETIC/offline (isolated
-// zero-dep Go module; pure-stdlib parse scripts) — no network install.
+// verifier that keeps the file parseable). These three are deterministic
+// delete-match removals/normalizations and ship enabled, propose-only;
+// unused-dependency notes that high-confidence ecosystems could graduate to
+// auto_apply later. duplicate-ci-step also uses a command detector but is
+// REPORT-ONLY (fix.kind=none) and ships DISABLED: a `run:` step repeated across
+// jobs usually cannot be safely auto-removed (jobs run on isolated runners, so the
+// repeat is often required), so it reports the smell and proposes no change. Their
+// fixtures are HERMETIC/offline (isolated zero-dep Go module; pure-stdlib parse
+// scripts) — no network install.
 //
 // The Sprint 021 P6 security-hygiene wave adds three SECURITY-stage, propose-only
 // (auto_apply=false) species whose edge is the VERIFIED REMEDIATION diff, not

@@ -39,7 +39,7 @@ A `yes` cell means the capability applies; `-` means it does not.
 | `dead-code` | yes | - | ast-grep | - | - |
 | `dead-config` | - | yes | - | - | - |
 | `deep-nesting` | yes | - | ast-grep | yes | - |
-| `duplicate-ci-step` | - | yes | - | - | - |
+| `duplicate-ci-step` | - | yes | - | - | yes |
 | `duplicate-code-small` | yes | - | ast-grep | yes | - |
 | `duplicate-condition` | yes | - | ast-grep | - | - |
 | `empty-block` | yes | - | ast-grep | - | - |

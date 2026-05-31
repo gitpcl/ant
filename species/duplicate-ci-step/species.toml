@@ -1,24 +1,27 @@
 name        = "duplicate-ci-step"
-description = "Consolidates a CI step duplicated across jobs/workflows (keeps the YAML parseable)"
+description = "REPORTS a CI `run:` step that repeats across jobs in a workflow — a possible consolidation candidate. Report-only (no code change): cross-job repetition usually CANNOT be safely auto-removed because each job runs on an isolated runner, so deleting the step strips required setup/build. Ships DISABLED by default; enable per-project in ant.toml."
 severity    = "low"
 languages   = ["yaml"]
 auto_apply  = false
-enabled     = true
+enabled     = false
 
-# Detects a CI step whose `run:` command is duplicated across jobs in a workflow
-# YAML — a repeated step sequence that should be consolidated into a reusable
-# job/composite action/script. Cross-block analysis ast-grep cannot express (the
-# duplication spans separate jobs). The script flags the duplicate step's `- run:`
-# line (the occurrence after the first); the deterministic delete-match fix
-# removes that step line; the command: verifier PARSES/LINTS the post-fix YAML to
-# prove it stays structurally valid (the YAML-parse + lint/dry-run gate the
-# contract requires) — a removal that corrupted the indentation/structure fails
-# the gate and is skipped.
+# REPORT-ONLY (fix.kind = "none"). The detector flags a `- run:` command that
+# appears in more than one job; `ant scout` reports it as a low-severity
+# consolidation candidate and changes NOTHING in the working tree (TECHSPEC §2).
+# It declares no [fix].transform and no [verify].checks — `ant fix` rejects a
+# report-only species with a clear message.
 #
-# Propose-only (auto_apply=false): consolidating CI is a judgement call (the right
-# target — reusable workflow vs composite action vs script — is human-chosen), so
-# Ant proposes the de-duplication and a human applies it. This differentiates Ant
-# beyond source code into CI config.
+# WHY report-only, not a deterministic fix: GitHub Actions jobs run on SEPARATE,
+# isolated runners and do not share a filesystem across `needs:`. A `run: pnpm
+# install` / `run: pnpm build` repeated in a build job and a deploy job is usually
+# REQUIRED, not redundant — deleting it leaves the deploy job with no dependencies
+# and no build output. The earlier delete-match fix removed the repeated line and
+# broke exactly this (a real deploy that ran `pages deploy dist` against a dist/
+# that was never built). A correct consolidation — artifact upload/download, a
+# reusable workflow, or a composite action — is a human judgement call, not a line
+# deletion. So Ant reports the smell and leaves remediation to a human. Ships
+# disabled by default because cross-job repetition is frequently intentional;
+# enable it per-project where consolidation is genuinely wanted.
 
 [detector]
 kind        = "command"
@@ -26,10 +29,4 @@ script      = "detect.sh"
 interpreter = "sh"
 
 [fix]
-kind      = "deterministic"
-transform = "delete-match"
-
-# The YAML-parse/lint command: verifier keeps the workflow parseable after removal.
-[verify]
-checks      = ["command:verify.sh"]
-interpreter = "sh"
+kind = "none"

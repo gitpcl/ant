@@ -54,10 +54,13 @@ var adr0002 = map[string]struct {
 	// deterministic species that operate on non-source files (go.mod, config.json,
 	// CI YAML) via the command-detector + command:-verifier escape hatches. Their
 	// fix is a delete-match removal/normalization; they ship enabled, propose-only.
+	// duplicate-ci-step is the exception: it is REPORT-ONLY (fix.kind=none) and
+	// ships DISABLED — cross-job CI step repetition usually cannot be safely
+	// auto-removed (isolated runners), so it reports the smell and proposes nothing.
 	"unused-dependency":    {FixKindDeterministic, false, true},
 	"stale-dependency-pin": {FixKindDeterministic, false, true},
 	"dead-config":          {FixKindDeterministic, false, true},
-	"duplicate-ci-step":    {FixKindDeterministic, false, true},
+	"duplicate-ci-step":    {FixKindNone, false, false},
 
 	// Sprint 021 P6 security-hygiene: three SECURITY-stage, propose-only
 	// (auto_apply=false) species whose value is the verified remediation. All
