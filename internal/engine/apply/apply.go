@@ -30,7 +30,7 @@ type Options struct {
 	// is isolated and reviewable (TECHSPEC §7, review-interaction.md).
 	NoBranch bool
 	// BranchName is the branch to create when NoBranch is false. Empty defaults
-	// to "ant/fix-<runID>".
+	// to "ant/<runID>" (the run id already carries its "fix-<n>" kind prefix).
 	BranchName string
 	// Now supplies the commit timestamp; nil uses time.Now (a fixed clock makes
 	// tests deterministic).
@@ -50,8 +50,9 @@ type Result struct {
 // and `ant fix --apply` (trusted diffs) call — the caller has already filtered
 // the records to exactly the set that should land, so Land applies all of them.
 //
-// Branch by default: create+checkout "ant/fix-<runID>" then commit each diff on
-// it. --no-branch: commit onto the current branch. Each record becomes one
+// Branch by default: create+checkout "ant/<runID>" (the run id already includes
+// its "fix-<n>" prefix) then commit each diff on it. --no-branch: commit onto the
+// current branch. Each record becomes one
 // commit whose message carries the species + fixer provenance. A patch that does
 // not apply cleanly aborts the landing with an operational error BEFORE
 // committing that diff, so a bad patch never half-lands.
@@ -85,7 +86,10 @@ func Land(ctx context.Context, bus *events.Bus, runID string, records []engine.S
 	if !opts.NoBranch {
 		branch = opts.BranchName
 		if branch == "" {
-			branch = "ant/fix-" + runID
+			// The run id already carries its kind prefix (e.g. "fix-<n>"), so the
+			// branch is just "ant/<runID>" — NOT "ant/fix-"+runID, which double-
+			// prefixed it to "ant/fix-fix-<n>".
+			branch = "ant/" + runID
 		}
 		ref := plumbing.NewBranchReferenceName(branch)
 		if err := wt.Checkout(&git.CheckoutOptions{Branch: ref, Create: true}); err != nil {

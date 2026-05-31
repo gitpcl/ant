@@ -80,7 +80,7 @@ func (a *recordedApplier) ApplyRecords(_ context.Context, bus *events.Bus, runID
 	a.landed = append(a.landed, records...)
 	for _, rec := range records {
 		bus.Publish(events.Event{Type: events.TypeApplyDone, ApplyDone: &events.ApplyDonePayload{
-			RunID: runID, Path: rec.Diff.Files[0].Path, Branch: "ant/fix-" + runID, Commit: "deadbeef"}})
+			RunID: runID, Path: rec.Diff.Files[0].Path, Branch: "ant/" + runID, Commit: "deadbeef"}})
 	}
 	return len(records), nil
 }

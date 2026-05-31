@@ -40,10 +40,10 @@ func TestApplyCLIEndToEnd(t *testing.T) {
 
 	// Save a run and stage an accepted + a skipped record into the Store.
 	st := store.New(root)
-	if err := st.SaveRun(engine.Run{ID: "run-e2e", StartedAt: "2026-05-24T00:00:00Z"}); err != nil {
+	if err := st.SaveRun(engine.Run{ID: "fix-run-e2e", StartedAt: "2026-05-24T00:00:00Z"}); err != nil {
 		t.Fatalf("SaveRun: %v", err)
 	}
-	area := stage.New(st, "run-e2e")
+	area := stage.New(st, "fix-run-e2e")
 	accepted := engine.StagedRecord{
 		Finding: engine.Finding{Species: "unused-import", File: "main.go", Span: engine.Span{StartLine: 3}, Message: "unused import"},
 		Diff:    engine.ProposedDiff{Files: []engine.FileDiff{{Path: "main.go", Patch: "--- a/main.go\n+++ b/main.go\n@@ -3,1 +3,0 @@\n-import \"fmt\"\n"}}, Fixer: "deterministic (delete-match)"},
@@ -60,7 +60,7 @@ func TestApplyCLIEndToEnd(t *testing.T) {
 		t.Fatalf("stage skipped: %v", err)
 	}
 
-	out, code := runCmd(t, "apply", "run-e2e", "--path", root)
+	out, code := runCmd(t, "apply", "fix-run-e2e", "--path", root)
 	if code != engine.ExitOK {
 		t.Fatalf("apply exit = %d, want 0:\n%s", code, out)
 	}

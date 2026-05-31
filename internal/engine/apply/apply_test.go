@@ -95,7 +95,7 @@ func TestLandOnBranchByDefault(t *testing.T) {
 	var res Result
 	applyDone := collectApplyDone(t, func(bus *events.Bus) {
 		var err error
-		res, err = Land(context.Background(), bus, "run-1",
+		res, err = Land(context.Background(), bus, "fix-run-1",
 			[]engine.StagedRecord{deleteImportRecord(engine.MarkAccepted)},
 			Options{Root: root, Now: fixedClock()})
 		if err != nil {
@@ -229,7 +229,7 @@ func TestLandPreflightAbortsCleanly(t *testing.T) {
 	bad.Diff.Files[0].Patch = "--- a/main.go\n+++ b/main.go\n@@ -1,1 +1,0 @@\n-this line is not in the file\n"
 
 	bus := events.NewBus()
-	res, err := Land(context.Background(), bus, "run-pre",
+	res, err := Land(context.Background(), bus, "fix-run-pre",
 		[]engine.StagedRecord{good, bad},
 		Options{Root: root, Now: fixedClock()})
 	bus.Close()

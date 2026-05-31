@@ -164,7 +164,7 @@ func TestScoutFixReviewApplyEndToEnd(t *testing.T) {
 		scoutRes, err = scout.Run(context.Background(), bus, scout.Options{
 			Scope:     scope,
 			Detectors: detectors,
-			RunID:     "flow-1",
+			RunID:     "fix-flow-1",
 		})
 	})
 	if err != nil {
@@ -189,7 +189,7 @@ func TestScoutFixReviewApplyEndToEnd(t *testing.T) {
 
 	// --- stage 2: fix (detect -> REAL fixer -> REAL verify -> stage) ----------
 	st := store.New(root)
-	if err := st.SaveRun(engine.Run{ID: "flow-1", StartedAt: "2026-05-31T00:00:00Z"}); err != nil {
+	if err := st.SaveRun(engine.Run{ID: "fix-flow-1", StartedAt: "2026-05-31T00:00:00Z"}); err != nil {
 		t.Fatalf("SaveRun: %v", err)
 	}
 	ant := colony.Ant{
@@ -203,7 +203,7 @@ func TestScoutFixReviewApplyEndToEnd(t *testing.T) {
 			Scope:       scope,
 			Ants:        []colony.Ant{ant},
 			Store:       st,
-			RunID:       "flow-1",
+			RunID:       "fix-flow-1",
 			Concurrency: 1,
 		})
 	})
@@ -218,7 +218,7 @@ func TestScoutFixReviewApplyEndToEnd(t *testing.T) {
 		t.Fatalf("fix modified the working tree — the diff must be staged, not applied")
 	}
 
-	area := stage.New(st, "flow-1")
+	area := stage.New(st, "fix-flow-1")
 	records, err := area.ListRecords()
 	if err != nil {
 		t.Fatalf("ListRecords: %v", err)
@@ -256,7 +256,7 @@ func TestScoutFixReviewApplyEndToEnd(t *testing.T) {
 	var applyRes apply.Result
 	applyDone := 0
 	drainEvs := drainBus(t, func(bus *events.Bus) {
-		applyRes, err = apply.Land(context.Background(), bus, "flow-1", accepted, apply.Options{
+		applyRes, err = apply.Land(context.Background(), bus, "fix-flow-1", accepted, apply.Options{
 			Root: root,
 			Now:  func() time.Time { return time.Date(2026, 5, 31, 12, 0, 0, 0, time.UTC) },
 		})
