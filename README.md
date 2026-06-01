@@ -14,11 +14,11 @@ The core idea: **detection is allowed to be imperfect because verification is st
 
 A 30-second tour of the loop — `scout` → `fix` → `verify` → `review` — built from real terminal runs. Watch the colony fix one finding and **skip two** because the compile gate caught fixes that would break the build.
 
-<video src="https://github.com/gitpcl/ant/raw/main/docs/media/ant-promo.mp4" poster="docs/media/ant-promo-poster.png" controls muted playsinline width="100%"></video>
+[![Ant — scout, fix, verify, review](docs/media/ant-promo.gif)](docs/media/ant-promo.mp4)
 
-> If the player doesn't load, [**watch the demo**](docs/media/ant-promo.mp4) (or [poster](docs/media/ant-promo-poster.png)).
+> ▶ [**Watch the full-quality video (MP4)**](docs/media/ant-promo.mp4) — the GIF above is a downscaled preview.
 >
-> The video is rendered deterministically from HTML/CSS with [HyperFrames](https://github.com/heygen-com/hyperframes); the composition source lives in [`docs/media/hyperframes/`](docs/media/hyperframes/). Visual language follows the xAI / Grok design system.
+> Rendered deterministically from HTML/CSS with [HyperFrames](https://github.com/heygen-com/hyperframes); the composition source lives in [`docs/media/hyperframes/`](docs/media/hyperframes/).
 
 ---
 
