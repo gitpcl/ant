@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      /* Grok / xAI typefaces — Geist (display/body) + Geist Mono (terminal/badges) */
+      @font-face { font-family: "Geist"; font-weight: 400; font-style: normal;
+        src: url("https://cdn.jsdelivr.net/npm/@fontsource/geist/files/geist-latin-400-normal.woff2") format("woff2"); }
+      @font-face { font-family: "Geist"; font-weight: 500; font-style: normal;
+        src: url("https://cdn.jsdelivr.net/npm/@fontsource/geist/files/geist-latin-500-normal.woff2") format("woff2"); }
+      @font-face { font-family: "Geist"; font-weight: 600; font-style: normal;
+        src: url("https://cdn.jsdelivr.net/npm/@fontsource/geist/files/geist-latin-600-normal.woff2") format("woff2"); }
+      @font-face { font-family: "Geist Mono"; font-weight: 400; font-style: normal;
+        src: url("https://cdn.jsdelivr.net/npm/@fontsource/geist-mono/files/geist-mono-latin-400-normal.woff2") format("woff2"); }
+      @font-face { font-family: "Geist Mono"; font-weight: 500; font-style: normal;
+        src: url("https://cdn.jsdelivr.net/npm/@fontsource/geist-mono/files/geist-mono-latin-500-normal.woff2") format("woff2"); }
+
+      /* Grok tokens */
+      :root {
+        --midnight: #0c0c0b;      /* canvas */
+        --steel:    #1f2228;      /* surface / border */
+        --hairline: rgba(255,255,255,0.10);
+        --ghost:    rgba(255,255,255,0.25);
+        --white:    #ffffff;
+        --ash:      #7d8187;      /* secondary text */
+        --whisper:  #474747;
+        --blue:     #4d7fff;      /* the single vivid accent — verified / focus */
+        --gold:     #cfa55a;      /* warm hero glow accent (sparing) */
+      }
+
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 1920px; height: 1080px; overflow: hidden;
+        background: var(--midnight);
+        color: var(--white);            /* Frost White base — primary text per Grok system */
+        font-family: "Geist Mono", monospace;
+        letter-spacing: 0.01em;
+      }
+      #root { position: relative; width: 1920px; height: 1080px; }
+
+      /* ---------- background ---------- */
+      #bg { position: absolute; inset: 0; background: var(--midnight); }
+      /* warm hero spotlight, blooming from the upper-right like the Grok hero */
+      #glow {
+        position: absolute; right: -260px; top: -340px;
+        width: 1500px; height: 1100px;
+        background: radial-gradient(closest-side, rgba(207,165,90,0.16), rgba(207,165,90,0) 70%);
+        filter: blur(10px);
+      }
+      /* diffuse warm-orange glow near the bottom edge (Grok footer signature) */
+      #glow-foot {
+        position: absolute; left: 50%; bottom: -360px; width: 1700px; height: 620px;
+        margin-left: -850px;
+        background: radial-gradient(closest-side, rgba(204,122,0,0.12), rgba(204,122,0,0) 72%);
+        filter: blur(8px);
+      }
+
+      /* ---------- shared text (Grok-mapped) ---------- */
+      .amber { color: var(--gold); }   /* brand emphasis, warm + sparing */
+      .green { color: var(--blue); }   /* verified → the single vivid accent */
+      .red   { color: var(--ash); }    /* skipped → muted; a skip is not an error */
+      .blue  { color: var(--blue); }
+      .yellow{ color: var(--gold); }
+      .dim   { color: var(--ash); }
+      .fg    { color: var(--white); }
+
+      /* ---------- scene 1 / 6 fullscreen ---------- */
+      .center {
+        position: absolute; inset: 0;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center; text-align: center;
+      }
+      .ant-mark { font-size: 96px; line-height: 1; opacity: 0; }
+      /* giant Grok-style wordmark */
+      .title {
+        font-family: "Geist", sans-serif; font-weight: 600; font-size: 196px; line-height: 1;
+        letter-spacing: -0.025em; color: var(--white); opacity: 0;
+        text-shadow: 0 0 90px rgba(207,165,90,0.25);
+      }
+      .tagline {
+        font-family: "Geist", sans-serif; font-weight: 400; font-size: 34px; line-height: 1.4;
+        letter-spacing: -0.025em; color: var(--ash); margin-top: 30px; opacity: 0; max-width: 1180px;
+      }
+      .tagline b { color: var(--white); font-weight: 500; }
+      .subtle {
+        font-family: "Geist Mono", monospace; font-size: 18px; color: var(--ash);
+        margin-top: 42px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0;
+      }
+
+      /* ---------- terminal window ---------- */
+      #term { position: absolute; left: 210px; top: 150px; width: 1500px; height: 780px; }
+      .window {
+        position: absolute; inset: 0;
+        background: var(--midnight);
+        border: 1px solid var(--steel);
+        border-radius: 14px;
+        box-shadow: 0 40px 120px rgba(0,0,0,0.6);
+        opacity: 0; overflow: hidden;
+      }
+      .titlebar {
+        height: 56px; display: flex; align-items: center; padding: 0 22px;
+        border-bottom: 1px solid var(--steel); background: rgba(255,255,255,0.015);
+      }
+      .dots { display: flex; gap: 10px; }
+      .dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--whisper); }
+      .tlabels { position: relative; flex: 1; height: 24px; margin-left: 22px; }
+      .tlabel {
+        position: absolute; left: 0; top: 0; font-size: 17px; color: var(--ash); opacity: 0; white-space: nowrap;
+        letter-spacing: 0.06em; text-transform: uppercase;
+      }
+      .tlabel b { color: var(--white); font-weight: 500; }
+      /* scene marker = bracketed mono badge, Grok-style */
+      .chip {
+        position: absolute; right: 22px; top: 15px;
+        font-size: 15px; padding: 5px 14px; border-radius: 9999px;
+        border: 1px solid var(--ghost); color: var(--ash); background: transparent;
+        opacity: 0; white-space: nowrap; letter-spacing: 0.1em; text-transform: uppercase;
+      }
+
+      .screen { position: absolute; left: 0; top: 56px; right: 0; bottom: 0; padding: 30px 40px; }
+      .group { position: absolute; left: 40px; top: 30px; right: 40px; }
+      .line { font-size: 24px; line-height: 1.62; white-space: pre; opacity: 0; letter-spacing: 0; }
+      .prompt { color: var(--ash); }
+
+      /* typed command */
+      .type { display: inline-block; white-space: nowrap; overflow: hidden; vertical-align: bottom; width: 0; }
+      .cursor { display: inline-block; width: 10px; height: 24px; background: var(--white); vertical-align: bottom; margin-left: 2px; opacity: 0; transform: translateY(3px); }
+
+      /* severity tag — bracketed mono */
+      .tag { display: inline-block; min-width: 96px; letter-spacing: 0.08em; }
+      .sev-low    { color: var(--ash); }
+      .sev-medium { color: var(--gold); }
+
+      /* ---------- colony rows ---------- */
+      .crow {
+        position: relative; height: 46px; font-size: 23px; line-height: 46px;
+        display: flex; align-items: center; opacity: 0;
+      }
+      .crow .id   { width: 56px; color: var(--whisper); }
+      .crow .spec { width: 360px; color: var(--white); }
+      .crow .loc  { width: 230px; color: var(--ash); }
+      .crow .state { position: relative; flex: 1; height: 46px; }
+      .st { position: absolute; left: 0; top: 0; white-space: nowrap; opacity: 0; }
+      .pulse { display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: var(--gold); vertical-align: middle; margin-right: 12px; }
+
+      .counters { position: relative; height: 40px; margin-top: 22px; font-size: 23px; }
+      .cnt { position: absolute; left: 0; top: 0; white-space: pre; opacity: 0; }
+      .bar {
+        margin-top: 20px; width: 760px; height: 14px; border-radius: 9999px;
+        background: var(--steel); border: 1px solid var(--hairline); overflow: hidden; opacity: 0;
+      }
+      .bar-fill { height: 100%; width: 0%;
+        background: linear-gradient(90deg, var(--blue), #ffffff); }
+      .resolved { position: relative; height: 32px; margin-top: 16px; font-size: 21px; }
+
+      /* ---------- boxes (summary / review) ---------- */
+      .box {
+        border: 1px solid var(--steel); border-radius: 0px; padding: 24px 28px;
+        background: rgba(255,255,255,0.012); opacity: 0;
+      }
+      .box .bt {
+        font-family: "Geist Mono", monospace; font-size: 14px; letter-spacing: 0.1em;
+        color: var(--ash); text-transform: uppercase; margin-bottom: 16px;
+      }
+      .box .row { font-size: 24px; line-height: 1.75; white-space: pre; }
+      .big-tag {
+        font-family: "Geist", sans-serif; font-size: 50px; font-weight: 600; color: var(--white);
+        opacity: 0; letter-spacing: -0.025em; line-height: 1.12;
+      }
+      .big-tag .a { color: var(--blue); } .big-tag .b { color: var(--ash); }
+
+      .keybar { font-size: 21px; color: var(--ash); opacity: 0; letter-spacing: 0.04em; }
+      .keybar b { color: var(--white); font-weight: 500; }
+
+      .footer {
+        font-family: "Geist Mono", monospace; font-size: 18px; color: var(--ash);
+        opacity: 0; margin-top: 30px; letter-spacing: 0.08em;
+      }
+      .footer b { color: var(--white); font-weight: 500; }
+      /* giant translucent watermark behind hero/CTA */
+      .watermark {
+        position: absolute; left: 0; right: 0; text-align: center;
+        font-family: "Geist", sans-serif; font-weight: 600; font-size: 540px; line-height: 1;
+        letter-spacing: -0.04em; color: rgba(255,255,255,0.035); opacity: 0;
+        top: 50%; transform: translateY(-50%); pointer-events: none; user-select: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="33.5"
+         data-width="1920" data-height="1080">
+
+      <!-- BACKGROUND -->
+      <div id="bg" class="clip" data-start="0" data-duration="33.5" data-track-index="0">
+        <div id="glow"></div>
+        <div id="glow-foot"></div>
+      </div>
+
+      <!-- SCENE 1 — TITLE -->
+      <div id="s1" class="clip center" data-start="0" data-duration="4.3" data-track-index="6">
+        <div id="wm1" class="watermark">ant</div>
+        <div id="s1-ant" class="ant-mark">🐜</div>
+        <div id="s1-title" class="title">ant</div>
+        <div id="s1-tag" class="tagline">A colony that detects, fixes, and <b>verifies</b> code smells in parallel —<br/>and never touches your working tree until you say so.</div>
+        <div id="s1-sub" class="subtle">single Go binary · MIT · github.com/gitpcl/ant</div>
+      </div>
+
+      <!-- TERMINAL (persistent across scenes 2–5) -->
+      <div id="term" class="clip" data-start="3.8" data-duration="25.9" data-track-index="3">
+        <div id="term-window" class="window">
+          <div class="titlebar">
+            <div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+            <div class="tlabels">
+              <div id="tl-scout"  class="tlabel">~/repo — <b>ant scout</b></div>
+              <div id="tl-fix"    class="tlabel">~/repo — <b>ant fix</b> · the colony</div>
+              <div id="tl-verify" class="tlabel">~/repo — <b>verify gate</b></div>
+              <div id="tl-review" class="tlabel">~/repo — <b>ant review</b></div>
+            </div>
+            <div id="chip-scout"  class="chip">01 · detect</div>
+            <div id="chip-fix"    class="chip">02 · fix</div>
+            <div id="chip-verify" class="chip">03 · verify</div>
+            <div id="chip-review" class="chip">04 · review</div>
+          </div>
+
+          <div class="screen">
+
+            <!-- ===== SCOUT ===== -->
+            <div id="g-scout" class="group">
+              <div class="line" id="sc-cmd"><span class="prompt">$ </span><span class="type" id="sc-type" data-layout-allow-overflow>ant scout . --detail</span><span class="cursor" id="sc-cur"></span></div>
+              <div class="line" id="sc-l1"><span class="dim">ant scout: scanning .</span></div>
+              <div class="line" id="sc-l2">  <span class="tag sev-low">[low]</span><span class="dim">server.go:8 </span>  Ad-hoc debug output left in source <span class="dim">(trailing-debug-code)</span></div>
+              <div class="line" id="sc-l3">  <span class="tag sev-low">[low]</span><span class="dim">server.go:12</span>  Ad-hoc debug output left in source <span class="dim">(trailing-debug-code)</span></div>
+              <div class="line" id="sc-l4">  <span class="tag sev-medium">[medium]</span><span class="dim">server.go:3 </span>  Imported package is never referenced <span class="dim">(unused-import)</span></div>
+              <div class="line" id="sc-l5" style="margin-top:14px"><span class="fg">3 findings</span> <span class="dim">(highest severity:</span> <span class="yellow">medium</span><span class="dim">).</span></div>
+              <div class="line" id="sc-l6"><span class="dim">Run </span><span class="amber">ant fix</span><span class="dim"> to propose fixes.  ·  Nothing was modified.</span></div>
+            </div>
+
+            <!-- ===== COLONY ===== -->
+            <div id="g-colony" class="group">
+              <div class="line" id="co-cmd"><span class="prompt">$ </span><span class="type" id="co-type" data-layout-allow-overflow>ant fix .</span><span class="cursor" id="co-cur"></span></div>
+              <div class="line" id="co-hdr" style="margin-bottom:10px"><span class="amber">ant fix</span> <span class="dim">· run fix-17 · 16 workers · detect → fix → verify</span></div>
+
+              <div class="crow" id="row1">
+                <span class="id">#1</span><span class="spec">trailing-debug-code</span><span class="loc">server.go:8</span>
+                <span class="state">
+                  <span class="st" id="r1-work"><span class="pulse" id="r1-pulse"></span><span class="amber">WORKING</span> <span class="dim">fixing…</span></span>
+                  <span class="st" id="r1-done"><span class="green">✔ VERIFIED</span> <span class="dim">· staged for review</span></span>
+                </span>
+              </div>
+              <div class="crow" id="row2">
+                <span class="id">#2</span><span class="spec">trailing-debug-code</span><span class="loc">server.go:12</span>
+                <span class="state">
+                  <span class="st" id="r2-work"><span class="pulse"></span><span class="amber">WORKING</span> <span class="dim">fixing…</span></span>
+                  <span class="st" id="r2-done"><span class="red">✖ SKIPPED</span> <span class="dim">· compile failed → discarded</span></span>
+                </span>
+              </div>
+              <div class="crow" id="row3">
+                <span class="id">#3</span><span class="spec">unused-import</span><span class="loc">server.go:3</span>
+                <span class="state">
+                  <span class="st" id="r3-work"><span class="pulse"></span><span class="amber">WORKING</span> <span class="dim">fixing…</span></span>
+                  <span class="st" id="r3-done"><span class="red">✖ SKIPPED</span> <span class="dim">· compile failed → discarded</span></span>
+                </span>
+              </div>
+
+              <div class="counters">
+                <div class="cnt" id="cnt-a"><span class="dim">found</span> 3   <span class="green">✔ verified</span> 0   <span class="red">✖ skipped</span> 0   <span class="dim">◷ in flight 3</span></div>
+                <div class="cnt" id="cnt-b"><span class="dim">found</span> 3   <span class="green">✔ verified</span> 1   <span class="red">✖ skipped</span> 0   <span class="dim">◷ in flight 2</span></div>
+                <div class="cnt" id="cnt-c"><span class="dim">found</span> 3   <span class="green">✔ verified</span> 1   <span class="red">✖ skipped</span> 1   <span class="dim">◷ in flight 1</span></div>
+                <div class="cnt" id="cnt-d"><span class="dim">found</span> 3   <span class="green">✔ verified</span> 1   <span class="red">✖ skipped</span> 2   <span class="dim">◷ in flight 0</span></div>
+              </div>
+              <div class="bar" id="co-bar"><div class="bar-fill" id="co-fill"></div></div>
+              <div class="resolved">
+                <span class="cnt" id="res-0"><span class="dim">0 / 3 resolved</span></span>
+                <span class="cnt" id="res-1"><span class="dim">1 / 3 resolved</span></span>
+                <span class="cnt" id="res-2"><span class="dim">2 / 3 resolved</span></span>
+                <span class="cnt" id="res-3"><span class="fg">3 / 3 resolved</span> <span class="dim">· nothing applied — verified diffs staged</span></span>
+              </div>
+            </div>
+
+            <!-- ===== SUMMARY ===== -->
+            <div id="g-summary" class="group">
+              <div class="box" id="sum-box" style="width:780px">
+                <div class="bt">colony summary</div>
+                <div class="row"><span class="dim">found       </span> <span class="fg">3</span></div>
+                <div class="row"><span class="green">✔ verified  </span> <span class="fg">1</span>   <span class="dim">(staged for review)</span></div>
+                <div class="row"><span class="red">✖ skipped   </span> <span class="fg">2</span>   <span class="dim">(NOT applied — see below)</span></div>
+                <div class="row"><span class="dim">highest sev </span> <span class="yellow">MEDIUM</span></div>
+              </div>
+              <div class="line" id="sum-fail" style="margin-top:22px; opacity:0">
+                <span class="red">⚠ FAILURES</span> <span class="dim">— skipped and never applied</span><br/>
+                <span class="red"> ✖ unused-import</span> <span class="dim">server.go:3 — compile: "fmt" undefined after removal</span>
+              </div>
+              <div class="big-tag" id="sum-tag" style="margin-top:34px">Every fix is <span class="a">verified</span> or <span class="b">skipped</span>.<br/>Never silent.</div>
+            </div>
+
+            <!-- ===== REVIEW ===== -->
+            <div id="g-review" class="group">
+              <div class="line" id="rv-cmd"><span class="prompt">$ </span><span class="amber">ant review</span>   <span class="dim">· diff 1 / 1   ▸ 0 accepted · 0 skipped</span></div>
+              <div class="box" id="rv-prov" style="margin-top:18px; width:1000px">
+                <div class="bt">provenance</div>
+                <div class="row"><span class="dim">species  </span> trailing-debug-code     <span class="dim">severity</span> <span class="blue">● LOW</span></div>
+                <div class="row"><span class="dim">fixer    </span> deterministic (delete-match)</div>
+                <div class="row"><span class="dim">verified </span> <span class="green">✔ diff-bounded</span>  <span class="green">✔ compile</span>  <span class="green">✔ detector-clears</span></div>
+              </div>
+              <div class="box" id="rv-diff" style="margin-top:18px; width:1000px">
+                <div class="bt">diff · server.go</div>
+                <div class="row"><span class="dim">@@ -8,1 +8,0 @@</span></div>
+                <div class="row"><span class="red">-    fmt.Println("unreachable")</span></div>
+              </div>
+              <div class="keybar" id="rv-keys" style="margin-top:20px"><b>a</b> accept   <b>s</b> skip   <b>d</b> diff   <b>e</b> explain   <b>n</b> next   <b>q</b> quit</div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- SCENE 6 — CTA -->
+      <div id="s6" class="clip center" data-start="29.2" data-duration="4.3" data-track-index="6">
+        <div id="wm6" class="watermark">ant</div>
+        <div id="s6-ant" class="ant-mark" style="font-size:84px">🐜</div>
+        <div id="s6-tag" class="tagline" style="font-size:46px; color:var(--white); margin-top:14px; font-weight:500">Detection can be imperfect<br/>because <span style="color:var(--gold)">verification is strict.</span></div>
+        <div id="s6-cmd" class="line" style="font-size:22px; margin-top:46px; opacity:0; text-align:center">
+          <span class="prompt">$ </span><span id="s6-type" style="white-space:nowrap; color:var(--white)">curl -fsSL https://raw.githubusercontent.com/gitpcl/ant/main/install.sh | sh</span>
+        </div>
+        <div id="s6-foot" class="footer">WEB · GITHUB.COM/GITPCL/ANT · DOCS · <b>MIT</b></div>
+      </div>
+
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      const E = "power2.out";
+
+      // ---------- background drift ----------
+      tl.fromTo("#glow", { x: -40, y: 0 }, { x: 40, y: 30, duration: 33.5, ease: "none" }, 0);
+
+      // ---------- SCENE 1 ----------
+      tl.fromTo("#wm1",      { opacity: 0, scale: 1.06 }, { opacity: 1, scale: 1, duration: 1.4, ease: E }, 0.0);
+      tl.to("#wm1",          { opacity: 0, duration: 0.4, ease: "power1.in" }, 3.85);
+      tl.fromTo("#s1-ant",   { opacity: 0, scale: 0.7, y: 30 }, { opacity: 1, scale: 1, y: 0, duration: 0.9, ease: "back.out(1.6)" }, 0.2);
+      tl.fromTo("#s1-title", { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: 0.7, ease: E }, 0.7);
+      tl.fromTo("#s1-tag",   { opacity: 0, y: 22 }, { opacity: 1, y: 0, duration: 0.7, ease: E }, 1.2);
+      tl.fromTo("#s1-sub",   { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6, ease: E }, 1.7);
+      tl.to("#s1",           { opacity: 0, duration: 0.45, ease: "power1.in" }, 3.85);
+
+      // ---------- TERMINAL window in ----------
+      tl.fromTo("#term-window", { opacity: 0, y: 34, scale: 0.985 }, { opacity: 1, y: 0, scale: 1, duration: 0.6, ease: E }, 3.95);
+
+      // title-bar labels + chips (crossfade one member of a group to opacity 1, rest to 0)
+      const crossfade = (t, ids, show) => ids.forEach(id => {
+        tl.to(id, { opacity: id === show ? 1 : 0, duration: 0.35, ease: "none" }, t);
+      });
+      const LABELS = ["#tl-scout","#tl-fix","#tl-verify","#tl-review"];
+      const CHIPS  = ["#chip-scout","#chip-fix","#chip-verify","#chip-review"];
+      crossfade(4.2, LABELS, "#tl-scout");   crossfade(4.4, CHIPS, "#chip-scout");
+      crossfade(10.7, LABELS, "#tl-fix");    crossfade(10.7, CHIPS, "#chip-fix");
+      crossfade(19.7, LABELS, "#tl-verify"); crossfade(19.7, CHIPS, "#chip-verify");
+      crossfade(24.7, LABELS, "#tl-review"); crossfade(24.7, CHIPS, "#chip-review");
+
+      // ---------- SCOUT (4.2 – 10.5) ----------
+      tl.set("#g-scout", { opacity: 1 }, 4.2);
+      tl.to("#sc-cmd",  { opacity: 1, duration: 0.15 }, 4.4);
+      tl.to("#sc-cur",  { opacity: 1, duration: 0.1 }, 4.4);
+      tl.fromTo("#sc-type", { width: 0 }, { width: "21ch", duration: 0.7, ease: "none" }, 4.5);
+      tl.to("#sc-cur",  { opacity: 0, duration: 0.2 }, 5.3);
+      tl.to("#sc-l1", { opacity: 1, duration: 0.25 }, 5.4);
+      tl.to("#sc-l2", { opacity: 1, duration: 0.25 }, 5.75);
+      tl.to("#sc-l3", { opacity: 1, duration: 0.25 }, 6.0);
+      tl.to("#sc-l4", { opacity: 1, duration: 0.25 }, 6.25);
+      tl.to("#sc-l5", { opacity: 1, duration: 0.3 }, 6.7);
+      tl.to("#sc-l6", { opacity: 1, duration: 0.3 }, 7.0);
+      tl.to("#g-scout", { opacity: 0, duration: 0.4, ease: "power1.in" }, 10.0);
+
+      // ---------- COLONY (10.5 – 19.5) ----------
+      tl.set("#g-colony", { opacity: 1 }, 10.5);
+      tl.to("#co-cmd", { opacity: 1, duration: 0.15 }, 10.7);
+      tl.to("#co-cur", { opacity: 1, duration: 0.1 }, 10.7);
+      tl.fromTo("#co-type", { width: 0 }, { width: "10ch", duration: 0.45, ease: "none" }, 10.8);
+      tl.to("#co-cur", { opacity: 0, duration: 0.2 }, 11.25);
+      tl.to("#co-hdr", { opacity: 1, duration: 0.3 }, 11.3);
+
+      // rows enter (all WORKING)
+      tl.fromTo("#row1", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.3 }, 11.6);
+      tl.fromTo("#row2", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.3 }, 11.75);
+      tl.fromTo("#row3", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.3 }, 11.9);
+      tl.to("#r1-work", { opacity: 1, duration: 0.2 }, 11.7);
+      tl.to("#r2-work", { opacity: 1, duration: 0.2 }, 11.85);
+      tl.to("#r3-work", { opacity: 1, duration: 0.2 }, 12.0);
+      // pulsing worker dot
+      tl.fromTo("#r1-pulse", { opacity: 0.35 }, { opacity: 1, duration: 0.45, repeat: 6, yoyo: true, ease: "sine.inOut" }, 11.7);
+
+      // bar + counters appear
+      tl.to("#co-bar", { opacity: 1, duration: 0.3 }, 11.7);
+      tl.to("#cnt-a", { opacity: 1, duration: 0.25 }, 11.9);
+      tl.to("#res-0", { opacity: 1, duration: 0.25 }, 11.9);
+
+      // row 1 -> VERIFIED @ 13.2
+      tl.to("#r1-work", { opacity: 0, duration: 0.2 }, 13.2);
+      tl.to("#r1-done", { opacity: 1, duration: 0.3 }, 13.3);
+      tl.to(["#cnt-a","#res-0"], { opacity: 0, duration: 0.2 }, 13.2);
+      tl.to(["#cnt-b","#res-1"], { opacity: 1, duration: 0.25 }, 13.3);
+      tl.to("#co-fill", { width: "34%", duration: 0.4, ease: E }, 13.2);
+
+      // row 2 -> SKIPPED @ 14.1
+      tl.to("#r2-work", { opacity: 0, duration: 0.2 }, 14.1);
+      tl.to("#r2-done", { opacity: 1, duration: 0.3 }, 14.2);
+      tl.to(["#cnt-b","#res-1"], { opacity: 0, duration: 0.2 }, 14.1);
+      tl.to(["#cnt-c","#res-2"], { opacity: 1, duration: 0.25 }, 14.2);
+      tl.to("#co-fill", { width: "67%", duration: 0.4, ease: E }, 14.1);
+
+      // row 3 -> SKIPPED @ 14.9
+      tl.to("#r3-work", { opacity: 0, duration: 0.2 }, 14.9);
+      tl.to("#r3-done", { opacity: 1, duration: 0.3 }, 15.0);
+      tl.to(["#cnt-c","#res-2"], { opacity: 0, duration: 0.2 }, 14.9);
+      tl.to(["#cnt-d","#res-3"], { opacity: 1, duration: 0.25 }, 15.0);
+      tl.to("#co-fill", { width: "100%", duration: 0.45, ease: E }, 14.9);
+
+      tl.to("#g-colony", { opacity: 0, duration: 0.4, ease: "power1.in" }, 19.1);
+
+      // ---------- SUMMARY (19.5 – 24.5) ----------
+      tl.set("#g-summary", { opacity: 1 }, 19.5);
+      tl.fromTo("#sum-box", { opacity: 0, y: 22, scale: 0.99 }, { opacity: 1, y: 0, scale: 1, duration: 0.5, ease: E }, 19.8);
+      tl.to("#sum-fail", { opacity: 1, duration: 0.4 }, 21.0);
+      tl.fromTo("#sum-tag", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.6, ease: E }, 21.9);
+      tl.to("#g-summary", { opacity: 0, duration: 0.4, ease: "power1.in" }, 24.1);
+
+      // ---------- REVIEW (24.5 – 29.2) ----------
+      tl.set("#g-review", { opacity: 1 }, 24.5);
+      tl.to("#rv-cmd", { opacity: 1, duration: 0.3 }, 24.8);
+      tl.fromTo("#rv-prov", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.45, ease: E }, 25.2);
+      tl.fromTo("#rv-diff", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.45, ease: E }, 25.9);
+      tl.to("#rv-keys", { opacity: 1, duration: 0.4 }, 26.6);
+      tl.to("#term-window", { opacity: 0, y: -20, duration: 0.45, ease: "power1.in" }, 28.9);
+
+      // ---------- SCENE 6 — CTA ----------
+      tl.fromTo("#wm6", { opacity: 0, scale: 1.06 }, { opacity: 1, scale: 1, duration: 1.6, ease: E }, 29.3);
+      tl.fromTo("#s6-ant", { opacity: 0, scale: 0.8, y: 20 }, { opacity: 1, scale: 1, y: 0, duration: 0.6, ease: "back.out(1.5)" }, 29.5);
+      tl.fromTo("#s6-tag", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.6, ease: E }, 30.0);
+      tl.fromTo("#s6-cmd", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.6, ease: E }, 30.6);
+      tl.fromTo("#s6-foot", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6, ease: E }, 32.4);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

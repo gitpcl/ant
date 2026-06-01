@@ -11,6 +11,10 @@
 adapters/*/node_modules/
 adapters/*/dist/
 
+# Promo video (HyperFrames) source deps — keep the composition, ignore installs
+.promo/*/node_modules/
+.promo/*/renders/
+
 # Go build/test artifacts
 *.test
 *.out
@@ -30,3 +34,7 @@ docs/*
 # ...except the capability matrix: it is a versioned deliverable (Sprint 022 §9)
 # guarded by a committed drift test, so it must be tracked for CI to pass.
 !docs/CAPABILITY-MATRIX.md
+# ...and the promo deliverable: the rendered demo video shown in the README,
+# its poster frame, and the HyperFrames composition source (reproducible).
+!docs/media/
+docs/media/hyperframes/node_modules/
