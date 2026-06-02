@@ -1,0 +1,28 @@
+# Detector rule for the pint-format species (tool-runner fix — Sprint 023 PHP/
+# Laravel wave; auto_apply). Templated on species/import-sort + formatter-drift.
+#
+# This is an ORCHESTRATION species: the real work is done by Laravel Pint (the
+# PHP-CS-Fixer-based formatter Laravel ships), which the tool-runner execs, and
+# the trust gate is formatter-idempotence. ast-grep is a SYNTACTIC matcher
+# (TECHSPEC §2) and cannot itself decide "would Pint change this file"; that is
+# Pint's job. So the detector's role here is only to NOMINATE a file as a drift
+# candidate — it matches a `class_declaration` the author (or an upstream pass)
+# marked with an `// ant:pint-format` doc comment, the same marker convention the
+# Go orchestration species (formatter-drift, import-sort) use.
+#
+# After the tool-runner reformats the whole file, formatter-idempotence re-runs
+# Pint and requires zero further changes (an oscillating formatter FAILS — a trust
+# signal). detector-clears is intentionally NOT used: a formatter normalizes
+# layout, it does not remove the marker the detector matched, so re-detect is the
+# wrong gate. `compile`/`tests:affected` are NOT used either — on a non-Go repo
+# the Go-build compile gate is a vacuous pass (sprint-023 contract); the genuine
+# proof is formatter-idempotence plus the species' RequiredTools=["php"] CI skip.
+id: pint-format
+language: php
+severity: info
+message: 'File marked // ant:pint-format is not in canonical Pint layout; reformatting'
+rule:
+  kind: class_declaration
+  follows:
+    kind: comment
+    regex: 'ant:pint-format'

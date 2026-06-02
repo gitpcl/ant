@@ -322,6 +322,115 @@ func cases() []fixture.Case {
 			),
 		},
 		{
+			// laravel-dd-dump-debug (Sprint 023 PHP wave): templated on Go's
+			// trailing-debug-code. The ast-grep PHP detector nominates the standalone
+			// `dd($id);` debug statement (the chained `ray($id)->blue()` is correctly
+			// NOT matched). The deterministic delete-match fix removes the verbatim
+			// line; the gate is detector-clears + command:verify.sh (php -l over the
+			// scratch tree) — NO compile/tests:affected (vacuous Go-build pass on a
+			// non-Go repo, sprint-023 contract). RequiredTools=["php"] skips the case
+			// when php is absent, exactly as ast-grep species skip without the matcher.
+			Name:          "laravel-dd-dump-debug",
+			SpeciesDir:    filepath.Join(speciesRoot, "laravel-dd-dump-debug"),
+			RepoDir:       filepath.Join("testdata", "laravel-dd-dump-debug", "repo"),
+			GoldenPath:    filepath.Join("testdata", "laravel-dd-dump-debug", "fix.golden"),
+			RequiredTools: []string{"php"},
+		},
+		{
+			// laravel-env-call (Sprint 023 PHP wave): templated on n+1-query. The
+			// detector nominates an `env('KEY')` call OUTSIDE the config/ dir (it breaks
+			// `php artisan config:cache`); the recorded LLM fix replaces it with a
+			// `config('app.name')` read. After the fix no env() call remains in the
+			// non-config file, so detector-clears matches zero; command:verify.sh
+			// (php -l) proves the rewrite still parses. NO compile/tests:affected.
+			Name:          "laravel-env-call",
+			SpeciesDir:    filepath.Join(speciesRoot, "laravel-env-call"),
+			RepoDir:       filepath.Join("testdata", "laravel-env-call", "repo"),
+			GoldenPath:    filepath.Join("testdata", "laravel-env-call", "fix.golden"),
+			RequiredTools: []string{"php"},
+			Fixer:         fixture.RecordedFixer(engine.FileDiff{Path: "app/Services/Mailer.php", Patch: laravelEnvCallPatch}),
+		},
+		{
+			// laravel-n+1-eager-load (Sprint 023 PHP wave): templated on n+1-query. The
+			// detector nominates a relation/property access inside a `foreach` over an
+			// Eloquent collection (the lazy-load N+1); the recorded LLM fix adds
+			// `->with('posts')` to eager-load the relation before the loop. After the
+			// fix the lazy access pattern the rule matched is gone, so detector-clears
+			// matches zero; command:verify.sh (php -l) proves it parses.
+			Name:          "laravel-n+1-eager-load",
+			SpeciesDir:    filepath.Join(speciesRoot, "laravel-n+1-eager-load"),
+			RepoDir:       filepath.Join("testdata", "laravel-n+1-eager-load", "repo"),
+			GoldenPath:    filepath.Join("testdata", "laravel-n+1-eager-load", "fix.golden"),
+			RequiredTools: []string{"php"},
+			Fixer:         fixture.RecordedFixer(engine.FileDiff{Path: "app/Services/Report.php", Patch: laravelNPlusOnePatch}),
+		},
+		{
+			// livewire-public-untyped-prop (Sprint 023 PHP wave): templated on
+			// unchecked-type-assertion. The detector nominates an untyped `public $count`
+			// property on a Livewire\Component subclass; the recorded LLM fix adds the
+			// `int` type and a `#[Locked]` attribute (mutation-sensitive). After the fix
+			// the untyped public property is gone, so detector-clears matches zero;
+			// command:verify.sh (php -l) proves the typed property parses.
+			Name:          "livewire-public-untyped-prop",
+			SpeciesDir:    filepath.Join(speciesRoot, "livewire-public-untyped-prop"),
+			RepoDir:       filepath.Join("testdata", "livewire-public-untyped-prop", "repo"),
+			GoldenPath:    filepath.Join("testdata", "livewire-public-untyped-prop", "fix.golden"),
+			RequiredTools: []string{"php"},
+			Fixer:         fixture.RecordedFixer(engine.FileDiff{Path: "app/Livewire/Counter.php", Patch: livewireUntypedPropPatch}),
+		},
+		{
+			// laravel-orphan-config-key (Sprint 023 PHP wave): NEAR-EXACT mirror of
+			// dead-config but for PHP config. The command detector flags a config/*.php
+			// key referenced NOWHERE via config('x.y') (an orphan); the deterministic
+			// delete-match fix removes the key line; command:verify.sh re-parses the
+			// config with php -l + a php -r require to prove it is still a valid PHP
+			// array after removal. A REFERENCED key is NOT removed (discrimination).
+			// RequiredTools=["php"] skips when php is absent.
+			Name:          "laravel-orphan-config-key",
+			SpeciesDir:    filepath.Join(speciesRoot, "laravel-orphan-config-key"),
+			RepoDir:       filepath.Join("testdata", "laravel-orphan-config-key", "repo"),
+			GoldenPath:    filepath.Join("testdata", "laravel-orphan-config-key", "fix.golden"),
+			RequiredTools: []string{"php"},
+		},
+		{
+			// laravel-mass-assignment (Sprint 023 PHP SECURITY stage): templated on
+			// sql-string-concat / n+1-query. The ast-grep PHP detector nominates the
+			// Eloquent mass-assignment `Post::create($request->all())` (the receiver-
+			// constrained rule correctly leaves the Collection `$collection->all()` and
+			// the safe `$request->validated()` calls in index() alone). The recorded LLM
+			// fix narrows the argument to `$request->validated()` (the validated,
+			// whitelisted subset). After the fix no create/fill fed by request input
+			// remains, so detector-clears matches zero; command:verify.sh (php -l) proves
+			// the rewrite still parses. NO compile/tests:affected (vacuous Go-build pass
+			// on a non-Go repo, sprint-023 contract). Propose-only (auto_apply=false).
+			// RequiredTools=["php"] skips the case when php is absent.
+			Name:          "laravel-mass-assignment",
+			SpeciesDir:    filepath.Join(speciesRoot, "laravel-mass-assignment"),
+			RepoDir:       filepath.Join("testdata", "laravel-mass-assignment", "repo"),
+			GoldenPath:    filepath.Join("testdata", "laravel-mass-assignment", "fix.golden"),
+			RequiredTools: []string{"php"},
+			Fixer:         fixture.RecordedFixer(engine.FileDiff{Path: "app/Http/Controllers/PostController.php", Patch: laravelMassAssignmentPatch}),
+		},
+		{
+			// laravel-raw-where-concat (Sprint 023 PHP SECURITY stage): templated on
+			// sql-string-concat. The ast-grep PHP detector nominates the raw WHERE built
+			// by concatenation `->whereRaw("status = " . $status)` (the recent() bound-
+			// parameter call `->whereRaw("created_at > ?", [$since])` and the STATIC
+			// `->whereRaw("deleted_at is null")` are correctly NOT matched — no concat).
+			// The recorded LLM fix moves the value into a BOUND parameter
+			// (`->whereRaw("status = ?", [$status])`). After the fix no raw call with a
+			// string-concatenation remains, so detector-clears matches zero;
+			// command:verify.sh (php -l) proves the rewrite still parses. NO
+			// compile/tests:affected. Propose-only (auto_apply=false).
+			// RequiredTools=["php"] skips the case when php is absent.
+			Name:          "laravel-raw-where-concat",
+			SpeciesDir:    filepath.Join(speciesRoot, "laravel-raw-where-concat"),
+			RepoDir:       filepath.Join("testdata", "laravel-raw-where-concat", "repo"),
+			GoldenPath:    filepath.Join("testdata", "laravel-raw-where-concat", "fix.golden"),
+			RequiredTools: []string{"php"},
+			Fixer:         fixture.RecordedFixer(engine.FileDiff{Path: "app/Repositories/UserRepository.php", Patch: laravelRawWhereConcatPatch}),
+		},
+		{
 			// insecure-random is a Sprint 021 P6 SECURITY-stage species: a security-
 			// sensitive value (a session token) generated with math/rand is predictable.
 			// The ast-grep detector nominates a call to rand.Intn/Int63/… inside a
@@ -360,6 +469,80 @@ func cases() []fixture.Case {
 // (compile + tests:affected + detector-clears), so the recorded fix is accepted
 // only if it genuinely compiles, keeps the affected tests green, AND clears the
 // detector. The patch body is the golden, so a drift in either fails the test.
+
+// laravelEnvCallPatch (Sprint 023 PHP wave) replaces the runtime env('MAIL_FROM')
+// read with config('mail.from') so the value survives `php artisan config:cache`.
+// After the fix no env() call remains in Mailer.php, so detector-clears matches
+// zero; the php -l command verifier confirms the file still parses.
+const laravelEnvCallPatch = `--- a/app/Services/Mailer.php
++++ b/app/Services/Mailer.php
+@@ -14,1 +14,1 @@
+-        return env('MAIL_FROM');
++        return config('mail.from');
+`
+
+// laravelNPlusOnePatch (Sprint 023 PHP wave) eager-loads the posts relation with
+// User::with('posts') before the loop and restructures the per-row access so the
+// foreach no longer lazy-loads per iteration. After the fix the
+// foreach-over-collection-with-relation-access shape the rule matched is gone, so
+// detector-clears matches zero; the php -l command verifier confirms it parses.
+const laravelNPlusOnePatch = `--- a/app/Services/Report.php
++++ b/app/Services/Report.php
+@@ -16,7 +16,8 @@
+-        $users = User::all();
+-        $rows = [];
+-        foreach ($users as $user) {
+-            $rows[] = $user->posts->count();
+-        }
+-
+-        return $rows;
++        $users = User::with('posts')->get();
++        $counts = $users->map(fn ($user) => $user->posts->count());
++
++        return $counts->all();
+`
+
+// livewireUntypedPropPatch (Sprint 023 PHP wave) types the untyped public $count
+// property as int and adds the #[Locked] attribute (it is mutation-sensitive —
+// the client should not set the count directly), importing
+// Livewire\Attributes\Locked. After the fix no untyped public property remains, so
+// detector-clears matches zero; the php -l command verifier confirms it parses.
+const livewireUntypedPropPatch = `--- a/app/Livewire/Counter.php
++++ b/app/Livewire/Counter.php
+@@ -5,1 +5,2 @@
+ use Livewire\Component;
++use Livewire\Attributes\Locked;
+@@ -9,1 +10,2 @@
+-    public $count = 0;
++    #[Locked]
++    public int $count = 0;
+`
+
+// laravelMassAssignmentPatch (Sprint 023 PHP SECURITY) narrows the Eloquent
+// mass-assignment from the fully-attacker-controlled `$request->all()` to the
+// validated, whitelisted subset `$request->validated()`, closing the overposting
+// vector. After the fix no create/fill fed by request input remains in
+// PostController.php, so detector-clears matches zero; the php -l command verifier
+// confirms the file still parses.
+const laravelMassAssignmentPatch = `--- a/app/Http/Controllers/PostController.php
++++ b/app/Http/Controllers/PostController.php
+@@ -18,1 +18,1 @@
+-        return Post::create($request->all());
++        return Post::create($request->validated());
+`
+
+// laravelRawWhereConcatPatch (Sprint 023 PHP SECURITY) moves the concatenated
+// $status out of the raw SQL text into a BOUND `?` parameter (passed in the
+// whereRaw bindings array), so the driver binds it as data and it can never be
+// parsed as SQL — the injection vector is closed. After the fix the whereRaw call
+// has no string-concatenation, so detector-clears matches zero; the php -l command
+// verifier confirms the file still parses.
+const laravelRawWhereConcatPatch = `--- a/app/Repositories/UserRepository.php
++++ b/app/Repositories/UserRepository.php
+@@ -16,1 +16,1 @@
+-        return $query->whereRaw("status = " . $status)->get();
++        return $query->whereRaw("status = ?", [$status])->get();
+`
 
 // ignoredErrorPatch (Sprint 018 flagship) binds the discarded error to a named
 // `err` and propagates it, changing Port's signature to (int, error) so the

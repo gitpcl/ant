@@ -34,6 +34,15 @@ func writeFakeTool(t *testing.T, name, scriptBody string) {
 // a no-op, so it is IDEMPOTENT — the formatter-idempotence gate passes.
 const stripTrailingWS = `f="$2"; sed 's/[[:space:]]*$//' "$f" > "$f.tmp" && mv "$f.tmp" "$f"`
 
+// stripTrailingWSLastArg is the same trailing-whitespace stripper as
+// stripTrailingWS, but it reads the file from the LAST positional argument
+// instead of "$2". The PHP tool fakes (pint, php-cs-fixer) are invoked as
+// `pint {file}` / `php-cs-fixer fix {file}`, so the scratch path is the final
+// argument, not a fixed "$2" slot. Using the last arg lets one fake body serve
+// both invocation shapes. On already-clean input a second run is a no-op, so it
+// is IDEMPOTENT and the formatter-idempotence gate passes.
+const stripTrailingWSLastArg = `eval "f=\${$#}"; sed 's/[[:space:]]*$//' "$f" > "$f.tmp" && mv "$f.tmp" "$f"`
+
 // sortImportLines is a fake goimports/isort stand-in: it sorts the contiguous
 // block of import spec lines inside a Go `import ( ... )` group alphabetically.
 // Sorting an already-sorted block changes nothing, so it is IDEMPOTENT and the
@@ -88,6 +97,44 @@ func TestOrchestrationSpeciesFixtures(t *testing.T) {
 			GoldenPath:  filepath.Join("testdata", "lint-autofix", "fix.golden"),
 			ToolCommand: "fakelint",
 			ToolArgs:    []string{"--fix", fixture.PlaceholderFile},
+		})
+	})
+
+	// pint-format (Sprint 023 PHP wave): templated on import-sort/formatter-drift.
+	// The detector nominates a class marked `// ant:pint-format`; the tool-runner
+	// runs a FAKE `pint` (the stripTrailingWS stand-in — a real Pint would do the
+	// same trailing-whitespace normalization) over the whole file, and the SAME
+	// fake re-runs as the formatter-idempotence gate (no further change = converged).
+	// No compile/tests:affected gate — on a non-Go repo that is a vacuous Go-build
+	// pass (sprint-023 contract); formatter-idempotence is the genuine proof. The
+	// fixture file is valid PHP so a real `php -l` would parse it.
+	t.Run("pint-format", func(t *testing.T) {
+		writeFakeTool(t, "pint", stripTrailingWSLastArg)
+		fixture.RunCase(t, fixture.Case{
+			Name:        "pint-format",
+			SpeciesDir:  filepath.Join("..", "pint-format"),
+			RepoDir:     filepath.Join("testdata", "pint-format", "repo"),
+			GoldenPath:  filepath.Join("testdata", "pint-format", "fix.golden"),
+			ToolCommand: "pint",
+			ToolArgs:    []string{fixture.PlaceholderFile},
+		})
+	})
+
+	// php-cs-fixer (Sprint 023 PHP wave): templated on formatter-drift. It SHIPS
+	// DISABLED by default (species.toml enabled=false) because it overlaps Pint —
+	// a project enables one or the other. The harness drives the detect→fix→verify
+	// path regardless of the runtime enabled flag (enabled=false is a resolution-
+	// time concern); TestPHPCSFixerShipsDisabled asserts it resolves disabled. Same
+	// formatter-idempotence-only gate as pint-format.
+	t.Run("php-cs-fixer", func(t *testing.T) {
+		writeFakeTool(t, "php-cs-fixer", stripTrailingWS)
+		fixture.RunCase(t, fixture.Case{
+			Name:        "php-cs-fixer",
+			SpeciesDir:  filepath.Join("..", "php-cs-fixer"),
+			RepoDir:     filepath.Join("testdata", "php-cs-fixer", "repo"),
+			GoldenPath:  filepath.Join("testdata", "php-cs-fixer", "fix.golden"),
+			ToolCommand: "php-cs-fixer",
+			ToolArgs:    []string{"fix", fixture.PlaceholderFile},
 		})
 	})
 }

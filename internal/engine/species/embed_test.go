@@ -71,6 +71,35 @@ var adr0002 = map[string]struct {
 	"hardcoded-secret": {FixKindLLM, false, true},
 	"insecure-random":  {FixKindLLM, false, true},
 	"unsafe-temp-file": {FixKindLLM, false, true},
+
+	// Sprint 023 P7 PHP/Laravel: the first non-Go-language species (languages=
+	// ["php"]). Two tool-runner orchestration species (auto_apply=true, gated by
+	// formatter-idempotence only): pint-format ships ENABLED; php-cs-fixer ships
+	// DISABLED (it overlaps Pint — a project enables one or the other). One
+	// deterministic delete-match, propose-only: laravel-dd-dump-debug. Three
+	// llm-assisted, propose-only: laravel-env-call, laravel-n+1-eager-load,
+	// livewire-public-untyped-prop. One command-detector deterministic delete-match,
+	// propose-only: laravel-orphan-config-key (mirror of dead-config). None lists
+	// compile/tests:affected (vacuous Go-build pass on a non-Go repo); their proof is
+	// detector-clears / formatter-idempotence / a php -l command:verify.sh.
+	"pint-format":                  {FixKindTool, true, true},
+	"php-cs-fixer":                 {FixKindTool, true, false},
+	"laravel-dd-dump-debug":        {FixKindDeterministic, false, true},
+	"laravel-env-call":             {FixKindLLM, false, true},
+	"laravel-n+1-eager-load":       {FixKindLLM, false, true},
+	"livewire-public-untyped-prop": {FixKindLLM, false, true},
+	"laravel-orphan-config-key":    {FixKindDeterministic, false, true},
+
+	// Sprint 023 P7 PHP/Laravel SECURITY stage: two SECURITY-stage, propose-only
+	// (auto_apply=false) PHP species authored by the security stage. Both are
+	// LLM-assisted and gated by detector-clears + a php -l command:verify.sh
+	// (NOT compile/tests:affected — vacuous Go-build pass on a non-Go repo);
+	// RequiredTools=["php"] in the fixture skips the gate green when php is absent.
+	// laravel-mass-assignment: Eloquent mass-assignment from $request->all() ->
+	// $request->validated()/whitelist. laravel-raw-where-concat: raw SQL built by
+	// concatenation in whereRaw/DB::raw -> bound parameters (SQLi).
+	"laravel-mass-assignment":  {FixKindLLM, false, true},
+	"laravel-raw-where-concat": {FixKindLLM, false, true},
 }
 
 // TestEmbed_BuiltinsDiscoverableNoDisk is the core feature-3 assertion: the

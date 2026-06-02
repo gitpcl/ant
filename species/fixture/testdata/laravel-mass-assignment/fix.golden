@@ -1,0 +1,5 @@
+--- a/app/Http/Controllers/PostController.php
++++ b/app/Http/Controllers/PostController.php
+@@ -18,1 +18,1 @@
+-        return Post::create($request->all());
++        return Post::create($request->validated());

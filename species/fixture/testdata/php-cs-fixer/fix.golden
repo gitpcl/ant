@@ -1,0 +1,27 @@
+--- a/app/Service.php
++++ b/app/Service.php
+@@ -1,12 +1,12 @@
+-<?php
+-
+-namespace App;
+-
+-// ant:php-cs-fixer the class below has trailing-whitespace drift the formatter fixes
+-class Service
+-{
+-    public function handle(string $name): string
+-    {
+-        return strtoupper($name);   
+-    }
+-}
++<?php
++
++namespace App;
++
++// ant:php-cs-fixer the class below has trailing-whitespace drift the formatter fixes
++class Service
++{
++    public function handle(string $name): string
++    {
++        return strtoupper($name);
++    }
++}

@@ -1,0 +1,27 @@
+# Detector rule for the laravel-dd-dump-debug species (deterministic delete-match,
+# propose-only — Sprint 023 PHP/Laravel wave). Templated on Go's
+# trailing-debug-code.
+#
+# dd() (dump-and-die), dump(), and ray() are Laravel's ad-hoc debug-output helpers.
+# Left in source they leak data and (dd) abort the request. ast-grep matches them
+# SYNTACTICALLY as a statement-level call: a bare `dd($$$);` / `dump($$$);` /
+# `ray($$$);` expression statement (the `;` anchors the whole statement so the
+# `lines` capture is the entire indented source line the delete-match fix removes).
+# No marker comment is needed — the call shape IS the smell.
+#
+# A METHOD-CHAINED ray (`ray($x)->red();`) and a dump used as a sub-expression are
+# intentionally NOT matched: the rule targets the standalone debug STATEMENT a
+# developer forgot to delete, the safe deterministic-removal case. The fix is
+# PROPOSE-ONLY (auto_apply=false): a debug call can be intentional, so removal is
+# review-gated. detector-clears + a `php -l` command verifier prove the removal is
+# clean; compile/tests:affected are omitted (vacuous Go-build pass on a non-Go
+# repo, sprint-023 contract). severity `warning` so `ast-grep scan` exits 0.
+id: laravel-dd-dump-debug
+language: php
+severity: warning
+message: 'Statement-level debug call (dd/dump/ray) left in source; remove it before shipping'
+rule:
+  any:
+    - pattern: dd($$$ARGS);
+    - pattern: dump($$$ARGS);
+    - pattern: ray($$$ARGS);

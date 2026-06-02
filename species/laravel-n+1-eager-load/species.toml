@@ -1,0 +1,24 @@
+name        = "laravel-n+1-eager-load"
+description = "Flags a relation/property access inside a foreach over an Eloquent collection (N+1 lazy load); propose-only"
+severity    = "high"
+languages   = ["php"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# LLM-assisted fix (templated on n+1-query): eager-load the relation with
+# ->with(...) before the loop so the foreach no longer lazy-loads per row.
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+# detector-clears re-runs THIS rule and requires zero matches (the per-row lazy
+# access pattern is gone). command:verify.sh runs `php -l`. `compile`/
+# `tests:affected` OMITTED (vacuous Go-build pass on a non-Go repo, sprint-023
+# contract). Real proof = detector-clears + php -l, RequiredTools=["php"]-gated.
+[verify]
+checks      = ["detector-clears", "command:verify.sh"]
+interpreter = "sh"

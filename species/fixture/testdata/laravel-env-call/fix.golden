@@ -1,0 +1,5 @@
+--- a/app/Services/Mailer.php
++++ b/app/Services/Mailer.php
+@@ -14,1 +14,1 @@
+-        return env('MAIL_FROM');
++        return config('mail.from');

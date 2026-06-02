@@ -1,0 +1,5 @@
+--- a/app/Repositories/UserRepository.php
++++ b/app/Repositories/UserRepository.php
+@@ -16,1 +16,1 @@
+-        return $query->whereRaw("status = " . $status)->get();
++        return $query->whereRaw("status = ?", [$status])->get();

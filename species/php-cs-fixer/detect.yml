@@ -1,0 +1,24 @@
+# Detector rule for the php-cs-fixer species (tool-runner fix — Sprint 023 PHP/
+# Laravel wave; ships DISABLED by default). Templated on species/formatter-drift.
+#
+# This is an ORCHESTRATION species: php-cs-fixer (the standalone PHP Coding
+# Standards Fixer) does the real reformatting via the tool-runner; the trust gate
+# is formatter-idempotence. ast-grep only NOMINATES a drift candidate — a
+# `class_declaration` the author marked with an `// ant:php-cs-fixer` doc comment,
+# the same marker convention the Go orchestration species use.
+#
+# It overlaps pint-format (Pint IS php-cs-fixer with a Laravel preset), so this
+# species ships DISABLED in species.toml — a project enables one or the other.
+# detector-clears is NOT used (a formatter normalizes layout, it does not remove
+# the marker); compile/tests:affected are NOT used (vacuous Go-build pass on a
+# non-Go repo, sprint-023 contract). The genuine proof is formatter-idempotence
+# plus the RequiredTools=["php"] CI skip.
+id: php-cs-fixer
+language: php
+severity: info
+message: 'File marked // ant:php-cs-fixer is not in canonical php-cs-fixer layout; reformatting'
+rule:
+  kind: class_declaration
+  follows:
+    kind: comment
+    regex: 'ant:php-cs-fixer'

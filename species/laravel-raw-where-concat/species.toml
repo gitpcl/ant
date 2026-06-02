@@ -1,0 +1,29 @@
+name        = "laravel-raw-where-concat"
+description = "Detects a raw SQL fragment built by string concatenation in a Laravel query-builder call (`->whereRaw(\"...\" . $x)`, `DB::raw(\"...\" . $x)`) — the SQL-injection smell: the interpolated value is parsed as SQL, not bound as data. The fix moves the value to a bound parameter (`?` + a bindings array). security-stage, propose-only; see detect.yml"
+severity    = "high"
+languages   = ["php"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# LLM-assisted fix (templated on sql-string-concat): move the concatenated value
+# out of the raw SQL text into a BOUND parameter — a `?` placeholder in the static
+# fragment plus the value passed in the method's bindings array. WHICH values and
+# the exact placeholder shape are a review judgement on a security-sensitive
+# rewrite, so the parameterized form is ALWAYS staged for a human.
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+# detector-clears re-runs THIS rule over the patched scratch tree and requires
+# zero matches (no raw-SQL call still has a string-concatenation in its args).
+# command:verify.sh runs `php -l` so a rewrite that broke the syntax is skipped.
+# `compile`/`tests:affected` are DELIBERATELY OMITTED: on a non-Go repo the
+# Go-build compile gate is a vacuous pass (sprint-023 contract). Real proof =
+# detector-clears + php -l, gated by RequiredTools=["php"] for the CI skip.
+[verify]
+checks      = ["detector-clears", "command:verify.sh"]
+interpreter = "sh"

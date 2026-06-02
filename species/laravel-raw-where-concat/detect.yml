@@ -1,0 +1,54 @@
+# Detector rule for the laravel-raw-where-concat species (LLM-assisted,
+# SECURITY-stage — Sprint 023 PHP/Laravel wave). Templated on sql-string-concat.
+#
+# Laravel SQL-injection via raw-fragment concatenation: the query-builder's raw
+# escape hatches — `whereRaw`/`orWhereRaw`/`havingRaw`/`orderByRaw`/`selectRaw`/
+# `groupByRaw` and `DB::raw` — take a SQL STRING that is spliced verbatim into the
+# statement. Building that string by concatenating a runtime value
+# (`->whereRaw("status = " . $status)`) interpolates the value INTO the SQL text,
+# so an attacker-controlled value is parsed as SQL rather than bound as data — the
+# canonical injection vector (auth bypass, data exfiltration, schema damage). The
+# safe pattern is a bound parameter: a `?` placeholder in the static fragment and
+# the value passed in the method's bindings array
+# (`->whereRaw("status = ?", [$status])`), which the driver binds as data.
+#
+# The rule matches a raw-SQL builder call (or `DB::raw`) that HAS, anywhere in its
+# arguments, a string-concatenation: a `binary_expression` (the `.` concat) that
+# itself contains a string literal (`encapsed_string` for "double" / `string` for
+# 'single'). Requiring a string literal inside the binary keeps a purely numeric
+# binary (`$a + $b`) from matching, and matching the ENCLOSING call (not the bare
+# binary) anchors the finding at the raw-SQL call site for the fix. A call that
+# already uses bound parameters (`"... ?", [$value]`) has NO concatenation in its
+# args, so it is correctly NOT flagged — the bound-vs-concatenated discrimination
+# the security stage requires.
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: ast-grep NOMINATES the
+# raw-SQL-built-by-concatenation smell; it cannot prove the value is attacker-
+# controlled. The LLM fix moves the value(s) to bound parameters; detector-clears
+# (no raw call with a string-concat remains) + a `php -l` command verifier (the
+# file still parses) confirm the specific finding. compile/tests:affected are
+# omitted (vacuous Go-build pass on a non-Go repo, sprint-023 contract). severity
+# `warning` so `ast-grep scan` exits 0 on a match. auto_apply is false: SQL
+# injection is a security risk and the right binding is a review judgement, so the
+# parameterized rewrite is always staged for a human.
+id: laravel-raw-where-concat
+language: php
+severity: warning
+message: 'Raw SQL built by string concatenation (->whereRaw("..." . $value) / DB::raw) — the interpolated value is parsed as SQL, a SQL-injection vector; move it to a bound parameter (a `?` placeholder + a bindings array)'
+rule:
+  any:
+    - pattern: $Q->whereRaw($$$ARGS)
+    - pattern: $Q->orWhereRaw($$$ARGS)
+    - pattern: $Q->havingRaw($$$ARGS)
+    - pattern: $Q->orderByRaw($$$ARGS)
+    - pattern: $Q->selectRaw($$$ARGS)
+    - pattern: $Q->groupByRaw($$$ARGS)
+    - pattern: DB::raw($$$ARGS)
+  has:
+    kind: binary_expression
+    stopBy: end
+    has:
+      stopBy: end
+      any:
+        - kind: encapsed_string
+        - kind: string

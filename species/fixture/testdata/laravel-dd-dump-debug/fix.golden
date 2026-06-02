@@ -1,0 +1,4 @@
+--- a/app/Http/Controllers/UserController.php
++++ b/app/Http/Controllers/UserController.php
+@@ -14,1 +14,0 @@
+-        dd($id);

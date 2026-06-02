@@ -1,0 +1,14 @@
+--- a/app/Services/Report.php
++++ b/app/Services/Report.php
+@@ -16,7 +16,8 @@
+-        $users = User::all();
+-        $rows = [];
+-        foreach ($users as $user) {
+-            $rows[] = $user->posts->count();
+-        }
+-
+-        return $rows;
++        $users = User::with('posts')->get();
++        $counts = $users->map(fn ($user) => $user->posts->count());
++
++        return $counts->all();

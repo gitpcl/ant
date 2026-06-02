@@ -1,0 +1,37 @@
+name        = "pint-format"
+description = "Runs Laravel Pint over drifted PHP files and stages the reformatted result"
+severity    = "low"
+languages   = ["php"]
+auto_apply  = true
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# Tool-runner fix (Sprint 017, reused by Sprint 023 PHP wave): exec Laravel Pint
+# on a scratch copy and capture the reformatted file as the diff. The command is
+# DECLARATIVE — `pint` here for PHP, exactly as formatter-drift names `gofmt` for
+# Go and import-sort names `goimports`. No PHP tool is special-cased in the
+# engine; the tool-runner substitutes {file} with the scratch copy's path. The
+# fixture overrides this with a FAKE formatter on PATH so CI needs no real Pint.
+[fix]
+kind    = "tool"
+command = "pint"
+args    = ["{file}"]
+timeout = "60s"
+
+# formatter-idempotence re-runs the SAME formatter over the post-fix tree and
+# asserts no further changes (a stable formatter converges; an oscillating one
+# fails — a trust signal). This is the ONLY gate: `compile`/`tests:affected` are
+# DELIBERATELY OMITTED for the PHP wave — on a non-Go repo the hardcoded
+# `go build ./...` compile gate is a vacuous pass, so it would prove nothing
+# (sprint-023 contract). Pint normalizes layout, it does not remove the marker
+# the detector matched, so detector-clears is the wrong gate (same as
+# formatter-drift). Real proof for this tool species is formatter-idempotence.
+[verify]
+checks = ["formatter-idempotence"]
+
+[verify.tool]
+command = "pint"
+args    = ["--test", "{file}"]

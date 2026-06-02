@@ -1,0 +1,39 @@
+name        = "laravel-orphan-config-key"
+description = "Removes a config/*.php key referenced nowhere via config('x.y') (keeps the config parseable); propose-only"
+severity    = "low"
+languages   = ["php"]
+auto_apply  = false
+enabled     = true
+
+# Near-exact mirror of species/dead-config, for Laravel PHP config. Detects a key
+# in a config/*.php array whose `file.key` dotted path is referenced NOWHERE via
+# config('file.key') — an orphan left after the consuming code was removed.
+# Cross-file analysis ast-grep cannot do (the key is in config/*.php; its uses are
+# scattered across source). The script flags each orphan key line; the
+# deterministic delete-match fix removes it; the command: verifier RE-PARSES the
+# config PARSE-ONLY (php -l for syntax + a token_get_all array-shape check) to prove
+# it stays a valid PHP file returning an array (the config-parse gate the contract
+# requires) — a removal that broke the array fails the gate and is skipped. The
+# verifier NEVER executes the config (no require/include): per the Sprint 023
+# security review, running repo PHP on the post-diff scratch tree at verify time is
+# a code-execution surface, so the gate is deliberately tokenize-only — matching the
+# Go sibling dead-config, which parses config.json without evaluating it.
+#
+# Propose-only (auto_apply=false): a key may be read dynamically (config($var)),
+# so a human confirms every removal.
+
+[detector]
+kind        = "command"
+script      = "detect.sh"
+interpreter = "sh"
+
+[fix]
+kind      = "deterministic"
+transform = "delete-match"
+
+# The config-parse command verifier keeps the file PARSEABLE after removal. NO
+# compile/tests:affected (vacuous Go-build pass on a non-Go repo, sprint-023
+# contract). RequiredTools=["php"] skips the case when php is absent.
+[verify]
+checks      = ["command:verify.sh"]
+interpreter = "sh"

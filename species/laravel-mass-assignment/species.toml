@@ -1,0 +1,29 @@
+name        = "laravel-mass-assignment"
+description = "Detects Eloquent mass-assignment from unvalidated request input (`Model::create($request->all())` / `->fill($request->all())`) — the request fills every column, so an attacker can set fields the form never exposed (privilege escalation, overposting). The fix narrows the input to `$request->validated()` or an explicit whitelisted array. security-stage, propose-only; see detect.yml"
+severity    = "high"
+languages   = ["php"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# LLM-assisted fix (templated on n+1-query / sql-string-concat): replace the
+# unvalidated `$request->all()` argument with `$request->validated()` (or an
+# explicit whitelisted array). WHICH fields are safe to assign is a per-form
+# judgement the model makes from context, and getting it wrong is a security
+# regression, so the parameterized rewrite is ALWAYS staged for human review.
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+# detector-clears re-runs THIS rule over the patched scratch tree and requires
+# zero matches (no create/fill fed by $request->all() remains). command:verify.sh
+# runs `php -l` so a rewrite that broke the syntax is skipped. `compile`/
+# `tests:affected` are DELIBERATELY OMITTED: on a non-Go repo the Go-build compile
+# gate is a vacuous pass (sprint-023 contract). Real proof = detector-clears +
+# php -l, gated by RequiredTools=["php"] for the CI skip.
+[verify]
+checks      = ["detector-clears", "command:verify.sh"]
+interpreter = "sh"

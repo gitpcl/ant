@@ -76,6 +76,31 @@
 // with OS-chosen unpredictable name + 0600 perms; same gate). Fixtures use ONLY
 // obvious FAKE placeholders (the AWS-docs AKIAIOSFODNN7EXAMPLE) and a hermetic,
 // self-contained scanner stub — CI depends on no installed secret scanner.
+//
+// The Sprint 023 P7 PHP/Laravel wave adds the first NON-Go-language species —
+// seven engineer-stage species declaring languages=["php"], authored ONLY as
+// species folders (ast-grep already parses PHP via `language: php`; the
+// tool-runner, formatter-idempotence, command detector, and command:verify.sh
+// escape hatches all already exist, so no engine change). Two are tool-runner
+// orchestration species (auto_apply=true, gated by formatter-idempotence ONLY):
+// pint-format (Laravel Pint) and php-cs-fixer (ships DISABLED — overlaps Pint).
+// One is deterministic delete-match, propose-only: laravel-dd-dump-debug
+// (statement-level dd/dump/ray). Three are LLM-assisted, propose-only:
+// laravel-env-call (env() outside config/ -> config('x.y')), laravel-n+1-eager-load
+// (relation access in a foreach -> ->with(...)), and livewire-public-untyped-prop
+// (untyped public Livewire prop -> typed + #[Locked]). One is a command detector,
+// propose-only: laravel-orphan-config-key (a config/*.php key referenced nowhere
+// via config('x.y') — a near-exact mirror of dead-config). CRITICAL CONTRACT: no
+// PHP species lists `compile` or `tests:affected` — on a non-Go repo the hardcoded
+// `go build ./...` gate is a vacuous pass, so the trust proof is detector-clears /
+// formatter-idempotence / a `command:verify.sh` running `php -l`, each fixture
+// RequiredTools=["php"]-gated so CI without PHP skips green. The two SECURITY-stage
+// PHP species — laravel-mass-assignment (Eloquent mass-assignment from
+// $request->all() -> $request->validated()/whitelist) and laravel-raw-where-concat
+// (raw SQL built by concatenation in whereRaw/DB::raw -> bound parameters) — are
+// LLM-assisted, propose-only (auto_apply=false), gated by detector-clears + a
+// php -l command:verify.sh (no compile/tests:affected), and authored by the
+// security stage to the same contract.
 package builtins
 
 import "embed"
@@ -86,7 +111,7 @@ import "embed"
 // embed.FS paths are always slash-separated and rooted at this directory, so the
 // resolver sees "unused-import/species.toml", etc.
 //
-//go:embed unused-import dead-code unused-variable redundant-conversion unreachable-code empty-block duplicate-condition redundant-nil-check ineffective-assignment formatter-drift import-sort lint-autofix trailing-debug-code n+1-query missing-await nil-deref ai-slop ignored-error unchecked-type-assertion resource-leak missing-context-timeout unsafe-concurrency sql-string-concat deep-nesting long-function magic-number duplicate-code-small todo-expired unused-dependency dead-config duplicate-ci-step stale-dependency-pin hardcoded-secret insecure-random unsafe-temp-file
+//go:embed unused-import dead-code unused-variable redundant-conversion unreachable-code empty-block duplicate-condition redundant-nil-check ineffective-assignment formatter-drift import-sort lint-autofix trailing-debug-code n+1-query missing-await nil-deref ai-slop ignored-error unchecked-type-assertion resource-leak missing-context-timeout unsafe-concurrency sql-string-concat deep-nesting long-function magic-number duplicate-code-small todo-expired unused-dependency dead-config duplicate-ci-step stale-dependency-pin hardcoded-secret insecure-random unsafe-temp-file pint-format php-cs-fixer laravel-dd-dump-debug laravel-env-call laravel-n+1-eager-load livewire-public-untyped-prop laravel-orphan-config-key laravel-mass-assignment laravel-raw-where-concat
 var files embed.FS
 
 // FS returns the embedded built-in species tree as a read-only fs.FS-compatible

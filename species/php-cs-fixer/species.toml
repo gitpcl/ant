@@ -1,0 +1,34 @@
+name        = "php-cs-fixer"
+description = "Runs php-cs-fixer over drifted PHP files and stages the reformatted result; ships disabled (overlaps Pint)"
+severity    = "low"
+languages   = ["php"]
+auto_apply  = true
+enabled     = false
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# Tool-runner fix (Sprint 017, reused by Sprint 023 PHP wave): exec php-cs-fixer
+# on a scratch copy and capture the reformatted file. DECLARATIVE command, like
+# formatter-drift names gofmt. The fixture overrides this with a FAKE formatter on
+# PATH so CI needs no real php-cs-fixer. This species SHIPS DISABLED by default
+# (enabled = false above): Pint is php-cs-fixer with a Laravel preset, so the two
+# overlap — a project enables ONE of pint-format / php-cs-fixer, not both.
+[fix]
+kind    = "tool"
+command = "php-cs-fixer"
+args    = ["fix", "{file}"]
+timeout = "60s"
+
+# formatter-idempotence is the ONLY gate (same rationale as pint-format): on a
+# non-Go repo the Go-build compile gate is a vacuous pass (sprint-023 contract),
+# and a formatter does not remove the marker the detector matched (so
+# detector-clears is the wrong gate). Real proof = the formatter converges on a
+# second run, gated by RequiredTools=["php"] for the CI skip.
+[verify]
+checks = ["formatter-idempotence"]
+
+[verify.tool]
+command = "php-cs-fixer"
+args    = ["fix", "--dry-run", "{file}"]

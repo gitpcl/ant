@@ -1,0 +1,34 @@
+# Detector rule for the laravel-n+1-eager-load species (LLM-assisted, propose-only
+# — Sprint 023 PHP/Laravel wave). Templated on n+1-query.
+#
+# Laravel interpretation: iterating an Eloquent collection and touching a RELATION
+# on each row (`$user->posts`) lazy-loads that relation per iteration — one extra
+# query per row, the classic N+1. The fix is to EAGER-load the relation before the
+# loop with `->with('posts')` (or `load('posts')`), so the whole set is fetched in
+# one query.
+#
+# The rule nominates a `foreach ($coll as $item) { ... }` whose body accesses a
+# member on the loop variable (`$item->$rel`) via a `has` constraint with
+# `stopBy: end`. A foreach that touches no member on the loop variable (a plain
+# numeric/string aggregation) is NOT matched — the discrimination the fixture
+# proves. The match spans the whole foreach; that is fine for an LLM species,
+# because detector-clears only needs the lazy-access pattern to be GONE post-fix
+# (after ->with(...) is added the relation is pre-loaded, and the fixture's
+# rewrite restructures the access so this rule matches zero).
+#
+# Per ADR-0004 this is CANDIDATE-tier: ast-grep cannot prove the collection is an
+# Eloquent model set or that the member is a DB relation (it could be an in-memory
+# property) — it structurally nominates the per-row member-access-in-loop smell.
+# detector-clears + a `php -l` command verifier confirm the fix; compile/
+# tests:affected are omitted (vacuous Go-build pass on a non-Go repo, sprint-023
+# contract). severity `warning` so `ast-grep scan` exits 0 on a match.
+id: laravel-n+1-eager-load
+language: php
+severity: warning
+message: 'Relation/property access inside a foreach over a model collection (N+1 lazy load); eager-load it with ->with(...) before the loop'
+rule:
+  pattern: 'foreach ($COLL as $ITEM) { $$$BODY }'
+  has:
+    kind: member_access_expression
+    pattern: $ITEM->$REL
+    stopBy: end

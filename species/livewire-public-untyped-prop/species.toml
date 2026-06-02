@@ -1,0 +1,25 @@
+name        = "livewire-public-untyped-prop"
+description = "Flags an untyped public property on a Livewire\\Component subclass; propose-only"
+severity    = "medium"
+languages   = ["php"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# LLM-assisted fix (templated on unchecked-type-assertion): add a property type
+# and a #[Locked] attribute where the property is mutation-sensitive. The right
+# type + whether to lock is a judgement, so the fix is propose-only.
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+# detector-clears re-runs THIS rule and requires zero matches (the property is now
+# typed). command:verify.sh runs `php -l`. `compile`/`tests:affected` OMITTED
+# (vacuous Go-build pass on a non-Go repo, sprint-023 contract). Real proof =
+# detector-clears + php -l, RequiredTools=["php"]-gated.
+[verify]
+checks      = ["detector-clears", "command:verify.sh"]
+interpreter = "sh"

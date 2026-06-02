@@ -1,0 +1,46 @@
+# Detector rule for the livewire-public-untyped-prop species (LLM-assisted,
+# propose-only — Sprint 023 PHP/Laravel wave). Templated on
+# unchecked-type-assertion.
+#
+# Livewire interpretation: every PUBLIC property on a Livewire component is part of
+# the component's network-exposed state — it is serialized to the browser and can
+# be MUTATED by a crafted request (the data-binding model). An UNTYPED public
+# property (`public $count;`) accepts any value the client sends, so a type-juggle
+# or an unexpected shape can corrupt state or bypass a check. Typing the property
+# (`public int $count;`) makes Livewire coerce/reject mismatched input, and
+# `#[Locked]` forbids client mutation entirely for sensitive fields (ids, totals).
+#
+# The rule matches a `property_declaration` that (1) has a `public`
+# visibility_modifier, (2) does NOT have a `type` field (untyped), and (3) lives in
+# a class that `extends` something (a `base_clause` — the Livewire\Component
+# subclass). A TYPED public property (`public int $step`), a `protected`/`private`
+# property, and a property in a non-subclass are all correctly NOT matched — the
+# discrimination the fixture proves. ast-grep cannot prove the base class is
+# literally Livewire\Component (the `extends` name could be aliased), so per
+# ADR-0004 this is a CANDIDATE-tier nomination of the untyped-public-prop shape.
+#
+# detector-clears + a `php -l` command verifier confirm the fix (the property is
+# now typed → this rule matches zero, and the file still parses). compile/
+# tests:affected are omitted (vacuous Go-build pass on a non-Go repo, sprint-023
+# contract). severity `warning` so `ast-grep scan` exits 0 on a match.
+id: livewire-public-untyped-prop
+language: php
+severity: warning
+message: 'Untyped public property on a Livewire component is network-mutable with no type guard; add a type (and #[Locked] where mutation-sensitive)'
+rule:
+  kind: property_declaration
+  all:
+    - has:
+        kind: visibility_modifier
+        regex: '^public$'
+    - not:
+        has:
+          field: type
+          regex: '.'
+    - inside:
+        kind: declaration_list
+        inside:
+          kind: class_declaration
+          has:
+            kind: base_clause
+            stopBy: end

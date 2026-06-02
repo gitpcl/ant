@@ -1,0 +1,9 @@
+--- a/app/Livewire/Counter.php
++++ b/app/Livewire/Counter.php
+@@ -5,1 +5,2 @@
+ use Livewire\Component;
++use Livewire\Attributes\Locked;
+@@ -9,1 +10,2 @@
+-    public $count = 0;
++    #[Locked]
++    public int $count = 0;

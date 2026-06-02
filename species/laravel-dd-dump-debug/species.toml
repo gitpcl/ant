@@ -1,0 +1,27 @@
+name        = "laravel-dd-dump-debug"
+description = "Flags statement-level dd()/dump()/ray() debug calls left in Laravel source; propose-only"
+severity    = "low"
+languages   = ["php"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# Deterministic delete-match (templated on Go's trailing-debug-code): the matched
+# statement IS the smell, so the fix removes the verbatim matched line. No model.
+[fix]
+kind      = "deterministic"
+transform = "delete-match"
+
+# detector-clears re-runs THIS rule over the patched scratch tree and requires
+# zero matches (the dd/dump/ray statement is gone). command:verify.sh runs
+# `php -l` over the changed PHP so a removal that left a syntax error is skipped.
+# `compile`/`tests:affected` are DELIBERATELY OMITTED: on a non-Go repo the
+# hardcoded `go build ./...` compile gate is a vacuous pass (sprint-023 contract),
+# so it would prove nothing. The genuine proof is detector-clears + the php -l
+# parse gate, gated by RequiredTools=["php"] for the CI skip.
+[verify]
+checks      = ["detector-clears", "command:verify.sh"]
+interpreter = "sh"

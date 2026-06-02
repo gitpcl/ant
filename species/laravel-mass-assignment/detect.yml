@@ -1,0 +1,44 @@
+# Detector rule for the laravel-mass-assignment species (LLM-assisted,
+# SECURITY-stage — Sprint 023 PHP/Laravel wave). Templated on sql-string-concat /
+# n+1-query.
+#
+# Eloquent mass-assignment vulnerability: `Model::create($request->all())` (or
+# `$model->fill($request->all())`) feeds EVERY field of the inbound request into a
+# model write. The request array is fully attacker-controlled — a client can POST
+# fields the form never exposed (e.g. `is_admin`, `role`, `account_balance`) and,
+# unless every such column is in the model's `$guarded`/`$fillable` exactly right,
+# they are written. This is the classic overposting / privilege-escalation vector.
+# The safe pattern is to assign only validated, whitelisted input:
+# `$request->validated()` (the FormRequest's rule-checked subset) or an explicit
+# `['col' => $request->input('col'), ...]` array.
+#
+# The rule matches a `create(...)` static call or a `->fill(...)` method call whose
+# SOLE argument is `$request->all()` or `request()->all()`. The `constraints` block
+# pins the receiver of `->all()` to a variable literally named `$request` or the
+# `request()` helper via regex — so a Collection's `$collection->all()` (a common,
+# SAFE use of ->all()) is NOT flagged, and a differently-named local ($req, $data)
+# is left to a project to opt in. This is the request-input discrimination the
+# security stage requires, expressed in the rule itself (no engine change).
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: ast-grep NOMINATES the
+# unvalidated-mass-assignment shape; it cannot prove the model lacks a correct
+# $fillable whitelist. The LLM fix narrows the argument to validated/whitelisted
+# input; detector-clears (no create/fill fed by request()->all() remains) + a
+# `php -l` command verifier (the file still parses) confirm the specific finding.
+# compile/tests:affected are omitted (vacuous Go-build pass on a non-Go repo,
+# sprint-023 contract). severity `warning` so `ast-grep scan` exits 0 on a match.
+# auto_apply is false: mass-assignment is a security risk and the correct field
+# whitelist is a review judgement, so the rewrite is always staged for a human.
+id: laravel-mass-assignment
+language: php
+severity: warning
+message: "Mass-assignment from unvalidated request input (create/fill fed by $request->all()); an attacker can set any field — assign $request->validated() or an explicit whitelist instead"
+rule:
+  any:
+    - pattern: $M::create($REQ->all())
+    - pattern: $OBJ->fill($REQ->all())
+constraints:
+  REQ:
+    any:
+      - regex: '^\$request$'
+      - regex: '^request\(\)$'

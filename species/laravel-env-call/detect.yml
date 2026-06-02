@@ -1,0 +1,31 @@
+# Detector rule for the laravel-env-call species (LLM-assisted, propose-only —
+# Sprint 023 PHP/Laravel wave). Templated on n+1-query.
+#
+# Laravel's `env()` helper returns null once the config is cached
+# (`php artisan config:cache`), because env vars are only read while building the
+# cached config. Calling env() ANYWHERE OUTSIDE the config/ directory is therefore
+# a latent production bug: the value silently becomes null in a cached deploy. The
+# correct pattern is to read the value via `config('x.y')`, and to call env() ONLY
+# inside config/*.php.
+#
+# The rule matches an `env($$$)` call (the syntactic smell) and CONFINES the scan
+# to PHP outside config/ via the `files`/`ignores` globs — so an env() call that
+# legitimately lives in config/app.php is NOT flagged, while one in a service /
+# controller IS. This is the "outside config/ dir" discrimination the sprint
+# requires, expressed in the rule's own path filter (no engine change).
+#
+# Per ADR-0004 this is a CANDIDATE-tier detector: ast-grep nominates the env()
+# call; the LLM fix rewrites it to config('x.y'); detector-clears + a `php -l`
+# command verifier confirm no env() call remains and the file still parses.
+# compile/tests:affected are omitted (vacuous Go-build pass on a non-Go repo,
+# sprint-023 contract). severity `warning` so `ast-grep scan` exits 0 on a match.
+id: laravel-env-call
+language: php
+severity: warning
+message: "env() called outside config/ returns null once config is cached; read the value via config('x.y') instead"
+files:
+  - "**/*.php"
+ignores:
+  - "config/**"
+rule:
+  pattern: env($$$ARGS)

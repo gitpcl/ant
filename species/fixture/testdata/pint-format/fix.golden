@@ -1,0 +1,27 @@
+--- a/app/Service.php
++++ b/app/Service.php
+@@ -1,12 +1,12 @@
+-<?php
+-
+-namespace App;
+-
+-// ant:pint-format the class below has trailing-whitespace drift the formatter fixes
+-class Service
+-{
+-    public function handle(string $name): string
+-    {
+-        return trim($name);   
+-    }
+-}
++<?php
++
++namespace App;
++
++// ant:pint-format the class below has trailing-whitespace drift the formatter fixes
++class Service
++{
++    public function handle(string $name): string
++    {
++        return trim($name);
++    }
++}
