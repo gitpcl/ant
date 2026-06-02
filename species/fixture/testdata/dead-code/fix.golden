@@ -4,3 +4,9 @@
 -func deadHelper(n int) int {
 -	return n * 999
 -}
+--- a/web/legacy.js
++++ b/web/legacy.js
+@@ -6,3 +6,0 @@
+-function legacyTransform(rows) {
+-	return rows.map((r) => r.id);
+-}

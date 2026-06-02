@@ -1,0 +1,30 @@
+name        = "vue-reactivity-misuse"
+description = "Flags destructuring a reactive() object in a Vue <script setup> (loses reactivity); propose-only"
+severity    = "medium"
+languages   = ["vue", "ts"]
+auto_apply  = false
+enabled     = true
+
+# Command detector (Sprint 020 escape hatch, reused by the Sprint 025 Vue wave):
+# `.vue` is NOT a first-class ast-grep language, so detect.sh extracts the
+# `<script setup>` block from each *.vue to a temp .ts (line-preserving), runs
+# ast-grep over THAT for the reactivity smell, then maps the line numbers back to
+# the original .vue. No engine change — mirrors species/dead-config + n+1-query.
+[detector]
+kind        = "command"
+script      = "detect.sh"
+interpreter = "sh"
+
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+# detector-clears re-runs detect.sh over the patched scratch tree and requires
+# zero matches (no reactive() destructure remains). command:verify.sh runs a
+# `vue-tsc --noEmit` (falling back to `tsc --noEmit` over the extracted script)
+# type-check. compile/tests:affected are DELIBERATELY OMITTED — on a Vue/TS repo
+# the hardcoded Go-build compile gate is a vacuous pass (sprint-025 contract).
+# Real proof = detector-clears + the type-check, gated by RequiredTools=["node"].
+[verify]
+checks      = ["detector-clears", "command:verify.sh"]
+interpreter = "sh"

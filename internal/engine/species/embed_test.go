@@ -131,6 +131,34 @@ var adr0002 = map[string]struct {
 	// ship enabled.
 	"python-sql-fstring":       {FixKindLLM, false, true},
 	"fastapi-hardcoded-secret": {FixKindLLM, false, true},
+
+	// Sprint 025 P9 JS/TS + Vue: the third non-Go-language family — seven
+	// engineer-stage species covering plain JS, TS, and Vue 3 SFCs. Two tool-runner
+	// orchestration species (auto_apply=true, gated by formatter-idempotence):
+	// prettier-format ships ENABLED; eslint-autofix adds a tsc --noEmit
+	// command:verify.sh alongside idempotence. Two deterministic: js-console-debug
+	// (delete-match, propose-only) and js-eqeqeq (rewrite loose==/!=  to strict, the
+	// only auto_apply non-tool member — it preserves the == null/undefined idiom).
+	// Three llm-assisted, propose-only: ts-no-explicit-any, inertia-raw-response, and
+	// vue-reactivity-misuse (a command detector extracting .vue <script setup> to a
+	// temp .ts). None lists compile/tests:affected (vacuous Go-build pass on a JS/TS
+	// repo); their proof is detector-clears / formatter-idempotence / a tsc --noEmit
+	// command:verify.sh. The shared TS species dead-code, trailing-debug-code,
+	// unused-import, unused-variable, import-sort, ai-slop are also backfilled with a
+	// `language: javascript` `---` doc (js-multilang-backfill) — additive only, so
+	// their trust rows above are unchanged. The SECURITY-stage vue-v-html-xss is a
+	// command detector that scans each *.vue <template> for a v-html binding (raw
+	// unsanitized HTML — XSS sink) and proposes an llm fix (v-text/interpolation or
+	// sanitizer wrap); propose-only (auto_apply=false), gated by detector-clears + a
+	// grep-clears/vue-tsc command:verify.sh, RequiredTools=["node"]-gated.
+	"vue-v-html-xss":        {FixKindLLM, false, true},
+	"prettier-format":       {FixKindTool, true, true},
+	"eslint-autofix":        {FixKindTool, true, true},
+	"js-console-debug":      {FixKindDeterministic, false, true},
+	"js-eqeqeq":             {FixKindDeterministic, true, true},
+	"ts-no-explicit-any":    {FixKindLLM, false, true},
+	"inertia-raw-response":  {FixKindLLM, false, true},
+	"vue-reactivity-misuse": {FixKindLLM, false, true},
 }
 
 // TestEmbed_BuiltinsDiscoverableNoDisk is the core feature-3 assertion: the

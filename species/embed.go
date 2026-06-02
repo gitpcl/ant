@@ -137,6 +137,44 @@
 // `python -m py_compile` command:verify.sh (no compile/tests:affected), each
 // fixture RequiredTools=["python3"]-gated; py_compile only byte-compiles and never
 // EXECUTES the post-diff repo code, so the verifier is execution-free.
+//
+// The Sprint 025 P9 JS/TS + Vue wave adds the third non-Go-language family — seven
+// engineer-stage species covering plain JavaScript, TypeScript, and Vue 3 SFCs,
+// authored ONLY as species folders (ast-grep already parses ts/js/tsx/jsx via
+// `language: typescript`/`javascript`; `.vue` is covered by the command-detector
+// escape hatch, not an engine change). Two are tool-runner orchestration species
+// (auto_apply=true, gated by formatter-idempotence): prettier-format (`prettier
+// --write` over .ts/.js/.jsx/.vue) ships ENABLED; eslint-autofix (`eslint --fix`
+// safe subset) adds a `tsc --noEmit` command:verify.sh alongside idempotence. Two
+// are deterministic, propose-only/auto: js-console-debug (delete-match of stmt-level
+// console.log/console.debug/debugger, propose-only) and js-eqeqeq (rewrite of loose
+// `==`/`!=` to strict `===`/`!==`, auto_apply, preserving the `== null`/`== undefined`
+// idiom). Three are LLM-assisted, propose-only: ts-no-explicit-any (an explicit
+// `any` annotation -> the inferred/narrowed type), inertia-raw-response (a raw
+// res.json() returned from an Inertia controller path -> Inertia.render(...)), and
+// vue-reactivity-misuse (a COMMAND detector that extracts each *.vue `<script setup>`
+// to a line-preserving temp .ts, runs ast-grep for a reactive() destructure, and
+// maps the line back to the .vue -> a toRefs()/proxy fix). The shared TS species
+// dead-code, trailing-debug-code, unused-import, unused-variable, import-sort, and
+// ai-slop are BACKFILLED with a `language: javascript` `---` doc so they fire on
+// .js/.jsx too (js-multilang-backfill — additive `---` docs only, existing Go/TS
+// fixtures unchanged). CRITICAL CONTRACT (same as Sprints 023–024): no JS/TS species
+// lists `compile` or `tests:affected` — on a non-Go repo the hardcoded `go build
+// ./...` gate is a vacuous pass, so the trust proof is detector-clears /
+// formatter-idempotence / a `command:verify.sh` running `tsc --noEmit`
+// (`vue-tsc --noEmit` with a script-extraction tsc fallback for the .vue species),
+// each fixture RequiredTools=["node","tsc"]-gated (plus python3 for the .vue
+// extraction) so CI without the toolchain skips green. tsc --noEmit only
+// type-checks and never EXECUTES the repo code, and the .vue command detector
+// extracts/parses only (it never runs the SFC), so both are execution-free. The
+// SECURITY-stage member vue-v-html-xss (auto_apply=false) is a COMMAND detector
+// that scans each *.vue <template> region for a `v-html` binding — an XSS sink that
+// renders raw, unsanitized HTML — and proposes an llm fix that switches to
+// v-text/{{ }} interpolation or a sanitizer wrap. Like vue-reactivity-misuse it is
+// line-preserving and NON-EXECUTING (it greps the template text, never runs the
+// SFC); its gate is detector-clears + a command:verify.sh that grep-clears any
+// surviving v-html (the security remediation proof) and runs `vue-tsc --noEmit`
+// when present — no compile/tests:affected, RequiredTools=["node"]-gated.
 package builtins
 
 import "embed"
@@ -147,7 +185,7 @@ import "embed"
 // embed.FS paths are always slash-separated and rooted at this directory, so the
 // resolver sees "unused-import/species.toml", etc.
 //
-//go:embed unused-import dead-code unused-variable redundant-conversion unreachable-code empty-block duplicate-condition redundant-nil-check ineffective-assignment formatter-drift import-sort lint-autofix trailing-debug-code n+1-query missing-await nil-deref ai-slop ignored-error unchecked-type-assertion resource-leak missing-context-timeout unsafe-concurrency sql-string-concat deep-nesting long-function magic-number duplicate-code-small todo-expired unused-dependency dead-config duplicate-ci-step stale-dependency-pin hardcoded-secret insecure-random unsafe-temp-file pint-format php-cs-fixer laravel-dd-dump-debug laravel-env-call laravel-n+1-eager-load livewire-public-untyped-prop laravel-orphan-config-key laravel-mass-assignment laravel-raw-where-concat ruff-format ruff-autofix black-format isort-imports python-debug-print fastapi-sync-route-blocking fastapi-depends-default-arg python-bare-except python-sql-fstring fastapi-hardcoded-secret
+//go:embed unused-import dead-code unused-variable redundant-conversion unreachable-code empty-block duplicate-condition redundant-nil-check ineffective-assignment formatter-drift import-sort lint-autofix trailing-debug-code n+1-query missing-await nil-deref ai-slop ignored-error unchecked-type-assertion resource-leak missing-context-timeout unsafe-concurrency sql-string-concat deep-nesting long-function magic-number duplicate-code-small todo-expired unused-dependency dead-config duplicate-ci-step stale-dependency-pin hardcoded-secret insecure-random unsafe-temp-file pint-format php-cs-fixer laravel-dd-dump-debug laravel-env-call laravel-n+1-eager-load livewire-public-untyped-prop laravel-orphan-config-key laravel-mass-assignment laravel-raw-where-concat ruff-format ruff-autofix black-format isort-imports python-debug-print fastapi-sync-route-blocking fastapi-depends-default-arg python-bare-except python-sql-fstring fastapi-hardcoded-secret prettier-format eslint-autofix js-console-debug ts-no-explicit-any js-eqeqeq vue-reactivity-misuse inertia-raw-response vue-v-html-xss
 var files embed.FS
 
 // FS returns the embedded built-in species tree as a read-only fs.FS-compatible

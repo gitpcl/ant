@@ -22,3 +22,21 @@ rule:
   pattern: import "$PKG"
   inside:
     kind: source_file
+---
+# Sprint 025 js-multilang-backfill: plain JavaScript has no compiler that proves an
+# import unused (the Go doc above leans on `compile` for that), so the JS doc — like
+# the deterministic cleanup species — targets an import the author EXPLICITLY MARKED
+# removable with an `//ant:unused-import` doc comment. `language: javascript` fires
+# on .js/.jsx. The deterministic delete-match fix removes the marked single-line
+# import; detector-clears is the proof (on a JS repo `compile` is a vacuous Go-build
+# pass, so the explicit marker plus detector-clears carries removal safety — the same
+# gradient the TS unused-variable case uses).
+id: unused-import-js
+language: javascript
+severity: warning
+message: 'Import marked //ant:unused-import is never referenced and can be removed'
+rule:
+  pattern: import $WHAT from "$PKG"
+  follows:
+    kind: comment
+    regex: 'ant:unused-import'

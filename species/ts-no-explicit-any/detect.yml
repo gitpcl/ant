@@ -1,0 +1,32 @@
+# Detector rule for the ts-no-explicit-any species (LLM-assisted, propose-only —
+# Sprint 025 JS/TS + Vue wave). Templated on unchecked-type-assertion.
+#
+# TypeScript interpretation: an explicit `any` annotation opts the value OUT of
+# the type system — every property access and call on it is unchecked, so a real
+# type error (a typo, a wrong shape) slips through to runtime. The fix is to
+# replace `any` with the precise inferred/narrowed type (often `unknown` plus a
+# guard, a union, or the concrete interface). This rule nominates every explicit
+# `any` annotation by its AST node:
+#
+#   rule: { kind: predefined_type, regex: '^any$' }
+#
+# matching the `any` keyword wherever it appears as a type — a `let x: any`, a
+# parameter `(p: any)`, a return type, or a generic arg `Record<string, any>`.
+# Matching the node (not a `: any` text pattern) makes detector-clears precise:
+# after the model replaces the annotation with a real type, the `any`
+# predefined_type node is gone and this rule reports zero matches.
+#
+# This species is TypeScript-only: plain JavaScript carries no type annotations,
+# so there is a single `language: typescript` doc (which also covers .tsx). Per
+# ADR-0004 it is a CANDIDATE-tier detector — ast-grep nominates the `any`; the LLM
+# fix narrows it; detector-clears + a `tsc --noEmit` command verifier confirm no
+# `any` remains and the narrowed code still type-checks. compile/tests:affected
+# are omitted (vacuous Go-build pass on a JS/TS repo, sprint-025 contract).
+# severity `warning` so `ast-grep scan` exits 0 on a match.
+id: ts-no-explicit-any
+language: typescript
+severity: warning
+message: 'Explicit `any` opts out of type checking; replace it with the precise inferred/narrowed type'
+rule:
+  kind: predefined_type
+  regex: '^any$'

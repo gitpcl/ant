@@ -1,0 +1,8 @@
+--- a/app/handler.ts
++++ b/app/handler.ts
+@@ -6,1 +6,0 @@
+-	console.log("DEBUG: handle called with", name);
+--- a/app/util.js
++++ b/app/util.js
+@@ -6,1 +6,0 @@
+-	console.log("DEBUG: total over", items.length);

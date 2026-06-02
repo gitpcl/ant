@@ -1,0 +1,4 @@
+--- a/web/view.js
++++ b/web/view.js
+@@ -7,1 +7,0 @@
+-import legacy from "./legacy-helpers.js";

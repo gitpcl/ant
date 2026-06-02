@@ -1,0 +1,5 @@
+--- a/app/parse.ts
++++ b/app/parse.ts
+@@ -5,1 +5,1 @@
+-	let total: any = 0;
++	let total = 0;

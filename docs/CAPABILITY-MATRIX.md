@@ -44,6 +44,7 @@ A `yes` cell means the capability applies; `-` means it does not.
 | `duplicate-code-small` | yes | - | ast-grep | yes | - |
 | `duplicate-condition` | yes | - | ast-grep | - | - |
 | `empty-block` | yes | - | ast-grep | - | - |
+| `eslint-autofix` | - | yes | eslint | - | - |
 | `fastapi-depends-default-arg` | yes | - | ast-grep | yes | - |
 | `fastapi-hardcoded-secret` | yes | - | ast-grep | yes | - |
 | `fastapi-sync-route-blocking` | yes | - | ast-grep | yes | - |
@@ -52,8 +53,11 @@ A `yes` cell means the capability applies; `-` means it does not.
 | `ignored-error` | yes | - | ast-grep | yes | - |
 | `import-sort` | - | yes | goimports | - | - |
 | `ineffective-assignment` | yes | - | ast-grep | - | - |
+| `inertia-raw-response` | yes | - | ast-grep | yes | - |
 | `insecure-random` | yes | - | ast-grep | yes | - |
 | `isort-imports` | - | yes | ruff | - | - |
+| `js-console-debug` | yes | - | ast-grep | - | - |
+| `js-eqeqeq` | yes | - | ast-grep | - | - |
 | `laravel-dd-dump-debug` | yes | - | ast-grep | - | - |
 | `laravel-env-call` | yes | - | ast-grep | yes | - |
 | `laravel-mass-assignment` | yes | - | ast-grep | yes | - |
@@ -70,6 +74,7 @@ A `yes` cell means the capability applies; `-` means it does not.
 | `nil-deref` | yes | - | ast-grep | yes | - |
 | `php-cs-fixer` | - | yes | php-cs-fixer | - | - |
 | `pint-format` | - | yes | pint | - | - |
+| `prettier-format` | - | yes | prettier | - | - |
 | `python-bare-except` | yes | - | ast-grep | yes | - |
 | `python-debug-print` | yes | - | ast-grep | - | - |
 | `python-sql-fstring` | yes | - | ast-grep | yes | - |
@@ -82,6 +87,7 @@ A `yes` cell means the capability applies; `-` means it does not.
 | `stale-dependency-pin` | - | yes | - | - | - |
 | `todo-expired` | yes | - | ast-grep | - | yes |
 | `trailing-debug-code` | yes | - | ast-grep | - | - |
+| `ts-no-explicit-any` | yes | - | ast-grep | yes | - |
 | `unchecked-type-assertion` | yes | - | ast-grep | yes | - |
 | `unreachable-code` | yes | - | ast-grep | - | - |
 | `unsafe-concurrency` | yes | - | ast-grep | yes | - |
@@ -89,4 +95,6 @@ A `yes` cell means the capability applies; `-` means it does not.
 | `unused-dependency` | - | yes | - | - | - |
 | `unused-import` | yes | - | ast-grep | - | - |
 | `unused-variable` | yes | - | ast-grep | - | - |
+| `vue-reactivity-misuse` | - | yes | - | yes | - |
+| `vue-v-html-xss` | - | yes | - | yes | - |
 <!-- END GENERATED CAPABILITY MATRIX -->

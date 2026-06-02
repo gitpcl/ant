@@ -1,0 +1,47 @@
+# Detector rule for the prettier-format species (tool-runner fix — Sprint 025
+# JS/TS + Vue wave; auto_apply). Templated on species/formatter-drift + pint-format
+# + ruff-format.
+#
+# This is an ORCHESTRATION species: the real work is done by Prettier (the
+# JS/TS/Vue formatter the frontend stack ships), which the tool-runner execs, and
+# the trust gate is formatter-idempotence. ast-grep is a SYNTACTIC matcher
+# (TECHSPEC §2) and cannot itself decide "would Prettier change this file"; that is
+# Prettier's job. So the detector's role here is only to NOMINATE a file as a drift
+# candidate — it matches a `function_declaration` the author (or an upstream pass)
+# marked with an `// ant:prettier-format` doc comment, the same marker convention
+# the Go orchestration species (formatter-drift, import-sort), the PHP one
+# (pint-format), and the Python one (ruff-format) use.
+#
+# Two `---` docs anchor the nomination in BOTH `language: typescript` (.ts/.tsx)
+# and `language: javascript` (.js/.jsx) — the multi-document convention from
+# species/unused-variable/detect.yml — so a marked .js file is nominated exactly as
+# a marked .ts file is. The tool-runner's Prettier then dispatches on each file's
+# real extension (.ts/.js/.jsx/.vue), so the SAME species covers the whole JS/TS/Vue
+# surface.
+#
+# After the tool-runner reformats the whole file, formatter-idempotence re-runs
+# Prettier and requires zero further changes (an oscillating formatter FAILS — a
+# trust signal). detector-clears is intentionally NOT used: a formatter normalizes
+# layout, it does not remove the marker the detector matched, so re-detect is the
+# wrong gate. `compile`/`tests:affected` are NOT used either — on a non-Go repo the
+# Go-build compile gate is a vacuous pass (sprint-025 contract); the genuine proof
+# is formatter-idempotence plus the species' RequiredTools CI skip.
+id: prettier-format-ts
+language: typescript
+severity: info
+message: 'File marked // ant:prettier-format is not in canonical Prettier layout; reformatting'
+rule:
+  kind: function_declaration
+  follows:
+    kind: comment
+    regex: 'ant:prettier-format'
+---
+id: prettier-format-js
+language: javascript
+severity: info
+message: 'File marked // ant:prettier-format is not in canonical Prettier layout; reformatting'
+rule:
+  kind: function_declaration
+  follows:
+    kind: comment
+    regex: 'ant:prettier-format'

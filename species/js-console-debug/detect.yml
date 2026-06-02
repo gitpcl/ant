@@ -1,0 +1,76 @@
+# Detector rule for the js-console-debug species (deterministic delete-match,
+# propose-only — Sprint 025 JS/TS + Vue wave). Templated on Go's
+# trailing-debug-code, extended to plain JavaScript with a second `---` doc.
+#
+# This is a localized single-statement smell: an ad-hoc debug print left in the
+# source. ast-grep matches it SYNTACTICALLY — a statement-level `console.log(...)`
+# / `console.debug(...)` call or a bare `debugger;` statement, the canonical JS/TS
+# debug-output tics. `console.error`/`console.warn` are NOT matched (they are
+# legitimate logging), so only the throwaway-debug shapes are flagged. No marker
+# comment is needed because the call/statement shape IS the smell.
+#
+# Two languages × two shapes = four `---` docs (the multi-document convention the
+# template species/unused-variable/detect.yml establishes):
+#   * `language: typescript` fires on .ts/.tsx; `language: javascript` on .js/.jsx.
+#   * The call shape uses ast-grep's `context`/`selector` trick (as Go's
+#     trailing-debug-code does) so a bare `console.log($$$)` pattern parses as a
+#     call_expression, not a type/sequence expression.
+#   * `debugger;` is matched by its own `kind: debugger_statement` node.
+#
+# The fix is PROPOSE-ONLY (auto_apply=false): a debug line can be intentional, so
+# removal is review-gated. The deterministic delete-match fix removes the verbatim
+# matched line(s); detector-clears re-runs this rule and requires zero matches
+# afterward, and the command:verify.sh `tsc --noEmit` gate proves the post-delete
+# tree still type-checks (compile/tests:affected are vacuous Go-build passes on a
+# JS/TS repo — sprint-025 contract).
+id: js-console-debug-call-ts
+language: typescript
+severity: warning
+message: 'Ad-hoc debug output (console.log/console.debug) left in source; remove or replace with structured logging'
+rule:
+  any:
+    - pattern:
+        context: |
+          function _() {
+            console.log($$$ARGS)
+          }
+        selector: call_expression
+    - pattern:
+        context: |
+          function _() {
+            console.debug($$$ARGS)
+          }
+        selector: call_expression
+---
+id: js-console-debug-stmt-ts
+language: typescript
+severity: warning
+message: 'Leftover `debugger;` statement; remove it before shipping'
+rule:
+  kind: debugger_statement
+---
+id: js-console-debug-call-js
+language: javascript
+severity: warning
+message: 'Ad-hoc debug output (console.log/console.debug) left in source; remove or replace with structured logging'
+rule:
+  any:
+    - pattern:
+        context: |
+          function _() {
+            console.log($$$ARGS)
+          }
+        selector: call_expression
+    - pattern:
+        context: |
+          function _() {
+            console.debug($$$ARGS)
+          }
+        selector: call_expression
+---
+id: js-console-debug-stmt-js
+language: javascript
+severity: warning
+message: 'Leftover `debugger;` statement; remove it before shipping'
+rule:
+  kind: debugger_statement

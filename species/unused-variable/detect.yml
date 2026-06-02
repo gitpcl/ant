@@ -53,3 +53,17 @@ rule:
   follows:
     kind: comment
     regex: 'ant:unused-variable'
+---
+# Sprint 025 js-multilang-backfill: plain JavaScript shares the TS shape exactly —
+# a marked in-function `const` declaration. `language: javascript` fires on
+# .js/.jsx; the Go and TS docs above are separate `---` documents and are
+# untouched. Trust is unchanged (delete-match + detector-clears).
+id: unused-variable-js
+language: javascript
+severity: warning
+message: 'Variable marked //ant:unused-variable is never referenced and can be removed'
+rule:
+  pattern: const $VAR = $EXPR
+  follows:
+    kind: comment
+    regex: 'ant:unused-variable'

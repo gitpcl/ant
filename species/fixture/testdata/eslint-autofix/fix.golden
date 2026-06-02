@@ -1,0 +1,22 @@
+--- a/src/add.ts
++++ b/src/add.ts
+@@ -1,4 +1,4 @@
+-// ant:eslint-autofix this file has an auto-fixable lint finding (trailing whitespace)
+-function add(a: number, b: number): number {
+-	return a + b;  
+-}
++// ant:eslint-autofix this file has an auto-fixable lint finding (trailing whitespace)
++function add(a: number, b: number): number {
++	return a + b;
++}
+--- a/src/sub.js
++++ b/src/sub.js
+@@ -1,4 +1,4 @@
+-// ant:eslint-autofix this file has an auto-fixable lint finding (trailing whitespace)
+-function sub(a, b) {
+-	return a - b;  
+-}
++// ant:eslint-autofix this file has an auto-fixable lint finding (trailing whitespace)
++function sub(a, b) {
++	return a - b;
++}

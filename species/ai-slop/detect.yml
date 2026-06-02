@@ -42,3 +42,17 @@ rule:
   pattern: return $V
   follows:
     pattern: $V := $EXPR
+---
+# Sprint 025 js-multilang-backfill: the same AI-slop tic in JavaScript — a `const $V
+# = $EXPR` immediately followed by `return $V`, where `return $EXPR` would be
+# clearer. `language: javascript` fires on .js/.jsx. Same CANDIDATE-tier, fuzzy
+# nomination and DISABLED-by-default trust as the Go doc above (a separate `---`
+# document); the LLM fix is staged for human review and gated by detector-clears.
+id: ai-slop-js
+language: javascript
+severity: warning
+message: 'Redundant temporary variable declared and immediately returned — a low-signal AI-boilerplate tic; returning the expression directly is usually clearer (candidate-tier, fuzzy)'
+rule:
+  pattern: return $V
+  follows:
+    pattern: const $V = $EXPR

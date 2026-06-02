@@ -2,3 +2,7 @@
 +++ b/repo.go
 @@ -10,1 +10,0 @@
 -	fmt.Println("DEBUG: Greet called with", name)
+--- a/web/util.js
++++ b/web/util.js
+@@ -6,1 +6,0 @@
+-	console.log("DEBUG: total", items.length);

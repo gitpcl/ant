@@ -1,0 +1,5 @@
+--- a/src/components/Comment.vue
++++ b/src/components/Comment.vue
+@@ -6,1 +6,1 @@
+-	<div class="comment" v-html="body"></div>
++	<div class="comment">{{ body }}</div>

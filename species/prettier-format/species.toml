@@ -1,0 +1,39 @@
+name        = "prettier-format"
+description = "Runs Prettier over drifted .ts/.js/.jsx/.vue files and stages the reformatted result"
+severity    = "low"
+languages   = ["ts", "js", "vue"]
+auto_apply  = true
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# Tool-runner fix (Sprint 017, reused by Sprint 025 JS/TS wave): exec Prettier on a
+# scratch copy and capture the reformatted file as the diff. The command is
+# DECLARATIVE — `prettier --write` here, exactly as formatter-drift names `gofmt`,
+# pint-format names `pint`, and ruff-format names `ruff format`. No JS tool is
+# special-cased in the engine; the tool-runner substitutes {file} with the scratch
+# copy's path, and Prettier dispatches on the file's extension (.ts/.js/.jsx/.vue).
+# The fixture overrides this with a FAKE formatter on PATH so CI needs no real
+# Prettier.
+[fix]
+kind    = "tool"
+command = "prettier"
+args    = ["--write", "{file}"]
+timeout = "60s"
+
+# formatter-idempotence re-runs the SAME formatter over the post-fix tree and
+# asserts no further changes (a stable formatter converges; an oscillating one
+# fails — a trust signal). This is the ONLY gate: `compile`/`tests:affected` are
+# DELIBERATELY OMITTED for the JS/TS wave — on a non-Go repo the hardcoded
+# `go build ./...` compile gate is a vacuous pass (sprint-025 contract). Prettier
+# normalizes layout, it does not remove the marker the detector matched, so
+# detector-clears is the wrong gate (same as formatter-drift). Real proof for this
+# tool species is formatter-idempotence.
+[verify]
+checks = ["formatter-idempotence"]
+
+[verify.tool]
+command = "prettier"
+args    = ["--check", "{file}"]

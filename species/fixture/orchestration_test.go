@@ -215,4 +215,52 @@ func TestOrchestrationSpeciesFixtures(t *testing.T) {
 			ToolArgs:    []string{"check", "--select", "I", "--fix", fixture.PlaceholderFile},
 		})
 	})
+
+	// prettier-format (Sprint 025 JS/TS + Vue wave): templated on formatter-drift/
+	// pint-format/ruff-format. The detector nominates a .ts AND a .js file marked
+	// `// ant:prettier-format`; the tool-runner runs a FAKE `prettier --write` (the
+	// stripTrailingWSLastArg stand-in — a real Prettier would do the same trailing-
+	// whitespace normalization, dispatching on the .ts/.js/.jsx/.vue extension) over
+	// each file, and the SAME fake re-runs as the formatter-idempotence gate (no
+	// further change = converged). No compile/tests:affected gate — on a non-Go repo
+	// that is a vacuous Go-build pass (sprint-025 contract); formatter-idempotence is
+	// the genuine proof. Both fixture files are valid TS/JS so a real Prettier would
+	// parse them.
+	t.Run("prettier-format", func(t *testing.T) {
+		writeFakeTool(t, "prettier", stripTrailingWSLastArg)
+		fixture.RunCase(t, fixture.Case{
+			Name:        "prettier-format",
+			SpeciesDir:  filepath.Join("..", "prettier-format"),
+			RepoDir:     filepath.Join("testdata", "prettier-format", "repo"),
+			GoldenPath:  filepath.Join("testdata", "prettier-format", "fix.golden"),
+			ToolCommand: "prettier",
+			ToolArgs:    []string{"--write", fixture.PlaceholderFile},
+		})
+	})
+
+	// eslint-autofix (Sprint 025 JS/TS + Vue wave): templated on lint-autofix. The
+	// detector nominates a .ts AND a .js file marked `// ant:eslint-autofix`; the
+	// tool-runner runs a FAKE `eslint --no-config-lookup --fix` (the
+	// stripTrailingWSLastArg stand-in for the safe autofixable subset, reading the
+	// scratch path from the LAST arg, so the extra leading flag is harmlessly
+	// ignored), and the same fake re-runs as the formatter-idempotence gate. The
+	// ToolArgs mirror the real invocation shape, including the Sprint 025 security
+	// flag `--no-config-lookup` that stops ESLint from discovering/executing a
+	// repo-supplied eslint config. This species ALSO declares a `command:verify.sh`
+	// tsc --noEmit gate — RunCase runs the species' declared verifier chain
+	// (formatter-idempotence + command:verify.sh) against the scratch tree, so the
+	// type-check runs for real here (node/tsc are host tools, not faked). No
+	// compile/tests:affected (vacuous Go pass, sprint-025).
+	t.Run("eslint-autofix", func(t *testing.T) {
+		writeFakeTool(t, "eslint", stripTrailingWSLastArg)
+		fixture.RunCase(t, fixture.Case{
+			Name:          "eslint-autofix",
+			SpeciesDir:    filepath.Join("..", "eslint-autofix"),
+			RepoDir:       filepath.Join("testdata", "eslint-autofix", "repo"),
+			GoldenPath:    filepath.Join("testdata", "eslint-autofix", "fix.golden"),
+			ToolCommand:   "eslint",
+			ToolArgs:      []string{"--no-config-lookup", "--fix", fixture.PlaceholderFile},
+			RequiredTools: []string{"node", "tsc"},
+		})
+	})
 }

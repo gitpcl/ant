@@ -1,0 +1,38 @@
+name        = "vue-v-html-xss"
+description = "Flags a template-level v-html binding in a Vue SFC (renders unsanitized HTML — XSS risk); propose-only"
+severity    = "high"
+languages   = ["vue"]
+auto_apply  = false
+enabled     = true
+
+# Command detector (Sprint 020 escape hatch, reused by the Sprint 025 Vue wave):
+# `.vue` is NOT a first-class ast-grep language, so detect.sh scans the <template>
+# region of each *.vue for a `v-html` binding (`v-html=` or `:v-html`/`v-bind`
+# variants). `v-html` renders its expression as RAW HTML — if any part of the bound
+# value is attacker-influenced, it is a stored/reflected XSS vector (Vue's docs call
+# this out explicitly). Unlike vue-reactivity-misuse this does NOT need a script
+# extraction + ast-grep: the smell is a flat template-region regex match, so the
+# detector is a line-preserving grep over the <template> block. It ONLY reads and
+# matches text — it NEVER executes the SFC or any repo code (the wave-wide "never
+# run repo code at scan time" rule). Mirrors species/dead-config's command-detector
+# shape; no engine change.
+[detector]
+kind        = "command"
+script      = "detect.sh"
+interpreter = "sh"
+
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+# detector-clears re-runs detect.sh over the patched scratch tree and requires zero
+# matches (no raw v-html binding remains). command:verify.sh runs a `vue-tsc --noEmit`
+# (full SFC type-check) when present, else a grep-clears fallback proving no `v-html`
+# survives in any template. compile/tests:affected are DELIBERATELY OMITTED — on a
+# Vue/TS repo the hardcoded Go-build compile gate is a vacuous pass (sprint-025
+# contract). Real proof = detector-clears + the type-check/grep-clears gate, gated by
+# RequiredTools=["node"]. Propose-only (auto_apply=false): replacing v-html with a
+# sanitizer vs v-text/interpolation is a judgement call a human confirms.
+[verify]
+checks      = ["detector-clears", "command:verify.sh"]
+interpreter = "sh"

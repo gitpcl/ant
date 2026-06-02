@@ -1,0 +1,10 @@
+--- a/app/compare.ts
++++ b/app/compare.ts
+@@ -6,1 +6,1 @@
+-	return a == b;
++	return a === b;
+--- a/app/total.js
++++ b/app/total.js
+@@ -5,1 +5,1 @@
+-	return a != b;
++	return a !== b;

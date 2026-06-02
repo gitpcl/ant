@@ -1,0 +1,51 @@
+name        = "eslint-autofix"
+description = "Runs the safe/auto-fixable subset of ESLint (eslint --fix) over .ts/.js/.jsx/.vue files"
+severity    = "low"
+languages   = ["ts", "js", "vue"]
+auto_apply  = true
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# Tool-runner fix (Sprint 017, reused by Sprint 025 JS/TS wave): exec ESLint's SAFE
+# autofixer on a scratch copy and capture the resolved subset. Declarative command
+# — `eslint --fix` here, exactly as lint-autofix names `ruff --fix`. Only the tool's
+# own safe/auto-fixable subset is applied (the engine does not decide what is safe —
+# ESLint does). {file} is the scratch path; ESLint dispatches on the file extension.
+# The fixture overrides this with a FAKE autofixer on PATH so CI needs no real
+# ESLint.
+#
+# SECURITY (Sprint 025 review finding): `--no-config-lookup` disables ESLint's
+# config DISCOVERY. By default ESLint searches up the tree for an
+# `eslint.config.js`/`.eslintrc`; a v9 flat config is JavaScript that EXECUTES in
+# the Node process (it can `require()` arbitrary plugins), so running real `eslint`
+# over a scratch copy of a repo-controlled tree is the one JS/TS path where the tool
+# can run attacker-supplied code (unlike `tsc --noEmit`, which only type-checks).
+# `--no-config-lookup` stops that discovery so no repo eslint config is loaded or
+# executed. It is set on BOTH [fix] and [verify.tool] (the two exec points).
+[fix]
+kind    = "tool"
+command = "eslint"
+args    = ["--no-config-lookup", "--fix", "{file}"]
+timeout = "60s"
+
+# formatter-idempotence re-runs the SAME autofixer over the post-fix tree and
+# asserts no further changes (a stable autofixer converges; an oscillating one
+# fails — a trust signal). command:verify.sh runs `tsc --noEmit` so an autofix that
+# broke the types is skipped — the stronger gate that justifies auto_apply for a
+# linter (vs the format-only species). `compile`/`tests:affected` are DELIBERATELY
+# OMITTED — on a non-Go repo the Go-build compile gate is a vacuous pass
+# (sprint-025 contract); the genuine proof is formatter-idempotence + tsc --noEmit.
+# detector-clears is NOT used (the linter resolves findings its own way; re-running
+# ast-grep over a tool-resolved file is the wrong gate).
+[verify]
+checks      = ["formatter-idempotence", "command:verify.sh"]
+interpreter = "sh"
+
+# `--no-config-lookup` here too (the second exec point): the idempotence re-run must
+# not load/execute a repo-supplied eslint config either. See the [fix] SECURITY note.
+[verify.tool]
+command = "eslint"
+args    = ["--no-config-lookup", "{file}"]

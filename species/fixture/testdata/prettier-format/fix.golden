@@ -1,0 +1,22 @@
+--- a/src/mul.js
++++ b/src/mul.js
+@@ -1,4 +1,4 @@
+-// ant:prettier-format this file has trailing-whitespace drift Prettier normalizes
+-function mul(a, b) {
+-	return a * b;  
+-}
++// ant:prettier-format this file has trailing-whitespace drift Prettier normalizes
++function mul(a, b) {
++	return a * b;
++}
+--- a/src/total.ts
++++ b/src/total.ts
+@@ -1,4 +1,4 @@
+-// ant:prettier-format this file has trailing-whitespace drift Prettier normalizes
+-function total(a: number, b: number): number {
+-	return a + b;  
+-}
++// ant:prettier-format this file has trailing-whitespace drift Prettier normalizes
++function total(a: number, b: number): number {
++	return a + b;
++}

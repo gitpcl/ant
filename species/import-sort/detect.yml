@@ -25,3 +25,21 @@ rule:
   follows:
     kind: comment
     regex: 'ant:import-sort'
+---
+# Sprint 025 js-multilang-backfill: JavaScript has no parenthesized `import ( ... )`
+# group (the Go shape above); its imports are a run of `import ... from "..."`
+# statements. The JS doc NOMINATES a file by matching the first marked import
+# statement following an `//ant:import-sort` doc comment — exactly the file-nomination
+# role the Go doc plays (the external organizer, e.g. prettier-plugin-organize-imports
+# / eslint import/order, does the actual sorting over the whole file). `language:
+# javascript` fires on .js/.jsx. After the tool sorts, formatter-idempotence is the
+# proof; detector-clears is NOT used (sorting does not remove the marker).
+id: import-sort-js
+language: javascript
+severity: info
+message: 'Import block marked //ant:import-sort is not in canonical order; organizing imports'
+rule:
+  pattern: import $WHAT from "$PKG"
+  follows:
+    kind: comment
+    regex: 'ant:import-sort'

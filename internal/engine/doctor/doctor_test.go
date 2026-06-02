@@ -39,7 +39,7 @@ func baseOpts(t *testing.T) Options {
 		Root:            t.TempDir(),
 		ConfigPath:      filepath.Join(t.TempDir(), "ant.toml"), // does not exist
 		SpeciesUserRoot: "",                                     // built-ins only
-		LookPath:        lookPathFrom("ast-grep", "goimports", "ruff", "gofmt", "pint"),
+		LookPath:        lookPathFrom("ast-grep", "goimports", "ruff", "gofmt", "pint", "prettier", "eslint"),
 		Getenv:          envFrom(map[string]string{}),
 		OpenRepo:        func(string) error { return nil }, // a repo
 	}

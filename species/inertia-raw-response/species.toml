@@ -1,0 +1,24 @@
+name        = "inertia-raw-response"
+description = "Flags a raw `res.json(...)` returned from an Inertia controller where `Inertia.render(...)` is expected; propose-only"
+severity    = "medium"
+languages   = ["ts", "js"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+# detector-clears re-runs THIS rule over the patched scratch tree and requires
+# zero matches (no raw res.json() return remains in the Inertia controller).
+# command:verify.sh runs `tsc --noEmit` so the Inertia.render rewrite must still
+# type-check. compile/tests:affected are DELIBERATELY OMITTED — on a JS/TS repo the
+# hardcoded Go-build compile gate is a vacuous pass (sprint-025 contract). Real
+# proof = detector-clears + tsc --noEmit, gated by RequiredTools=["node","tsc"].
+[verify]
+checks      = ["detector-clears", "command:verify.sh"]
+interpreter = "sh"

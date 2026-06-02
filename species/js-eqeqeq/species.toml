@@ -1,0 +1,24 @@
+name        = "js-eqeqeq"
+description = "Rewrites loose equality `==`/`!=` to strict `===`/`!==` in JS/TS (the `== null`/`== undefined` idiom is preserved)"
+severity    = "low"
+languages   = ["ts", "js"]
+auto_apply  = true
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+[fix]
+kind      = "deterministic"
+transform = "rewrite"
+
+# detector-clears re-runs THIS rule over the patched scratch tree and requires
+# zero matches (the rewritten `===`/`!==` no longer matches the `==`/`!=` pattern).
+# command:verify.sh runs `tsc --noEmit` so a rewrite that broke the syntax/types is
+# skipped. compile/tests:affected are DELIBERATELY OMITTED — on a JS/TS repo the
+# hardcoded Go-build compile gate is a vacuous pass (sprint-025 contract). Real
+# proof = detector-clears + tsc --noEmit, gated by RequiredTools=["node","tsc"].
+[verify]
+checks      = ["detector-clears", "command:verify.sh"]
+interpreter = "sh"

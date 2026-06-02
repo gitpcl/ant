@@ -35,3 +35,22 @@ rule:
         fmt.Println($$$ARGS)
       }
     selector: call_expression
+---
+# Sprint 025 js-multilang-backfill: the JavaScript analog of the Go debug-output
+# tic is a statement-level `console.log(...)` call. The `context`/`selector` trick
+# forces tree-sitter to parse the bare `console.log($$$)` as a call_expression
+# (same technique as the Go doc). `language: javascript` fires on .js/.jsx so the
+# shared species now covers plain JavaScript; the existing Go .go fixture/golden is
+# untouched (a separate `---` doc). Trust is unchanged (delete-match + the species'
+# verify gate).
+id: trailing-debug-code-js
+language: javascript
+severity: info
+message: 'Ad-hoc debug output (console.log) left in source; remove or replace with structured logging'
+rule:
+  pattern:
+    context: |
+      function _() {
+        console.log($$$ARGS)
+      }
+    selector: call_expression

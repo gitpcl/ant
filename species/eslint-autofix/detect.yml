@@ -1,0 +1,41 @@
+# Detector rule for the eslint-autofix species (tool-runner fix — Sprint 025
+# JS/TS + Vue wave; auto_apply). Templated on species/lint-autofix, extended to
+# plain JavaScript with a `language: javascript` doc.
+#
+# ORCHESTRATION species: ESLint's own safe autofixer (`eslint --fix`) resolves the
+# findings; Ant wraps it in the staging/review/trust model and gates the result
+# with formatter-idempotence + a `tsc --noEmit` command verifier. ast-grep only
+# NOMINATES a file for autofixing — it matches a `function_declaration` the author
+# marked with an `// ant:eslint-autofix` doc comment (the established marker
+# convention). The wrapped tool decides what is auto-fixable; the engine does not.
+#
+# Two `---` docs anchor the nomination in BOTH `language: typescript` (.ts/.tsx)
+# and `language: javascript` (.js/.jsx) — the multi-document convention from
+# species/unused-variable/detect.yml. The tool-runner's ESLint then dispatches on
+# each file's real extension, so the SAME species covers the JS/TS/Vue surface.
+#
+# Trust rests on a STRONGER gate than the format species: formatter-idempotence
+# (the autofixer converges) PLUS command:verify.sh running `tsc --noEmit` (the
+# autofix still type-checks), so an autofix that changed types is caught and
+# skipped. `compile`/`tests:affected` are NOT used — on a non-Go repo the Go-build
+# compile gate is a vacuous pass (sprint-025 contract). detector-clears is not used
+# — re-running ast-grep over a tool-resolved file is the wrong gate.
+id: eslint-autofix-ts
+language: typescript
+severity: info
+message: 'File marked // ant:eslint-autofix has auto-fixable lint findings; running the safe autofixer'
+rule:
+  kind: function_declaration
+  follows:
+    kind: comment
+    regex: 'ant:eslint-autofix'
+---
+id: eslint-autofix-js
+language: javascript
+severity: info
+message: 'File marked // ant:eslint-autofix has auto-fixable lint findings; running the safe autofixer'
+rule:
+  kind: function_declaration
+  follows:
+    kind: comment
+    regex: 'ant:eslint-autofix'

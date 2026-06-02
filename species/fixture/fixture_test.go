@@ -26,6 +26,21 @@ func cases() []fixture.Case {
 			GoldenPath: filepath.Join("testdata", "unused-import", "fix.golden"),
 		},
 		{
+			// unused-import-js (Sprint 025 js-multilang-backfill): drives the SAME
+			// unused-import species against a JS-ONLY repo that exercises its new
+			// `language: javascript` doc. It is a separate repo (not the Go fixture's)
+			// because the Go fixture's repo.go carries an intentional unused GO import,
+			// which the shared `compile` gate (go build ./...) would reject while
+			// verifying the JS finding. Here the marked JS import is removed and
+			// detector-clears proves it (compile is a vacuous Go-build pass on a JS-only
+			// tree). RequiredTools=["node","tsc"] is NOT needed — the species' gate is
+			// compile + detector-clears, both host-tool-free.
+			Name:       "unused-import-js",
+			SpeciesDir: filepath.Join(speciesRoot, "unused-import"),
+			RepoDir:    filepath.Join("testdata", "unused-import-js", "repo"),
+			GoldenPath: filepath.Join("testdata", "unused-import-js", "fix.golden"),
+		},
+		{
 			Name:       "dead-code",
 			SpeciesDir: filepath.Join(speciesRoot, "dead-code"),
 			RepoDir:    filepath.Join("testdata", "dead-code", "repo"),
@@ -562,6 +577,109 @@ func cases() []fixture.Case {
 			RepoDir:    filepath.Join("testdata", "unsafe-temp-file", "repo"),
 			GoldenPath: filepath.Join("testdata", "unsafe-temp-file", "fix.golden"),
 			Fixer:      fixture.RecordedFixer(engine.FileDiff{Path: "repo.go", Patch: unsafeTempFilePatch}),
+		},
+		{
+			// js-console-debug (Sprint 025 JS/TS + Vue wave): templated on Go's
+			// trailing-debug-code, extended to plain JS with a `language: javascript`
+			// detector doc. Two findings: one console.log in handler.ts (.ts) and one
+			// in util.js (.js — the plain-JavaScript coverage this wave adds); safe.ts's
+			// console.error is correctly NOT flagged. The deterministic delete-match fix
+			// removes each verbatim line; the gate is detector-clears + command:verify.sh
+			// (tsc --noEmit over the scratch tree) — NO compile/tests:affected (vacuous
+			// Go-build pass on a JS/TS repo, sprint-025 contract). RequiredTools=["node",
+			// "tsc"] skips when the toolchain is absent. Each fixture file holds exactly
+			// ONE finding because detector-clears matches species+file.
+			Name:          "js-console-debug",
+			SpeciesDir:    filepath.Join(speciesRoot, "js-console-debug"),
+			RepoDir:       filepath.Join("testdata", "js-console-debug", "repo"),
+			GoldenPath:    filepath.Join("testdata", "js-console-debug", "fix.golden"),
+			RequiredTools: []string{"node", "tsc"},
+		},
+		{
+			// js-eqeqeq (Sprint 025 JS/TS + Vue wave): templated on redundant-conversion
+			// (the deterministic rewrite transform), extended to plain JS. Two findings:
+			// `a == b` in compare.ts (.ts) rewritten to `===`, and `a != b` in total.js
+			// (.js) rewritten to `!==`. guard.ts's `value == null` idiom is correctly
+			// PRESERVED (the right-hand-side not-null/undefined constraint). The gate is
+			// detector-clears + command:verify.sh (tsc --noEmit) — NO compile/
+			// tests:affected. RequiredTools=["node","tsc"]. One finding per file.
+			Name:          "js-eqeqeq",
+			SpeciesDir:    filepath.Join(speciesRoot, "js-eqeqeq"),
+			RepoDir:       filepath.Join("testdata", "js-eqeqeq", "repo"),
+			GoldenPath:    filepath.Join("testdata", "js-eqeqeq", "fix.golden"),
+			RequiredTools: []string{"node", "tsc"},
+		},
+		{
+			// ts-no-explicit-any (Sprint 025 JS/TS + Vue wave): templated on
+			// unchecked-type-assertion. The ast-grep `predefined_type ^any$` detector
+			// nominates the `let total: any` annotation in parse.ts; the recorded LLM fix
+			// narrows it to the inferred type (drops the `: any`, letting tsc infer
+			// `number`). count.ts (no `any`) is the non-matching case. After the fix no
+			// `any` node remains, so detector-clears matches zero; command:verify.sh
+			// (tsc --noEmit) confirms the narrowed code type-checks. NO compile/
+			// tests:affected (vacuous Go pass, sprint-025). RequiredTools=["node","tsc"].
+			Name:          "ts-no-explicit-any",
+			SpeciesDir:    filepath.Join(speciesRoot, "ts-no-explicit-any"),
+			RepoDir:       filepath.Join("testdata", "ts-no-explicit-any", "repo"),
+			GoldenPath:    filepath.Join("testdata", "ts-no-explicit-any", "fix.golden"),
+			RequiredTools: []string{"node", "tsc"},
+			Fixer:         fixture.RecordedFixer(engine.FileDiff{Path: "app/parse.ts", Patch: tsNoExplicitAnyPatch}),
+		},
+		{
+			// inertia-raw-response (Sprint 025 JS/TS + Vue wave): templated on
+			// laravel-env-call (the path-confined `files` discrimination). The ast-grep
+			// detector nominates `return res.json({ user })` in show() of an Inertia
+			// controller (UserController.ts under Controllers/); index()'s Inertia.render
+			// and health.ts's res.json OUTSIDE Controllers/ are correctly NOT flagged.
+			// The recorded LLM fix rewrites the raw JSON return to Inertia.render(...).
+			// After the fix no raw res.json() remains in the controller, so
+			// detector-clears matches zero; command:verify.sh (tsc --noEmit) confirms the
+			// rewrite type-checks. NO compile/tests:affected. RequiredTools=["node","tsc"].
+			Name:          "inertia-raw-response",
+			SpeciesDir:    filepath.Join(speciesRoot, "inertia-raw-response"),
+			RepoDir:       filepath.Join("testdata", "inertia-raw-response", "repo"),
+			GoldenPath:    filepath.Join("testdata", "inertia-raw-response", "fix.golden"),
+			RequiredTools: []string{"node", "tsc"},
+			Fixer:         fixture.RecordedFixer(engine.FileDiff{Path: "app/Controllers/UserController.ts", Patch: inertiaRawResponsePatch}),
+		},
+		{
+			// vue-reactivity-misuse (Sprint 025 JS/TS + Vue wave): the COMMAND detector
+			// that covers .vue without an engine change. detect.sh extracts each *.vue
+			// `<script setup>` to a line-preserving temp .ts, runs ast-grep for a
+			// reactive() destructure, and maps the line back to the .vue (Counter.vue
+			// line 5). Safe.vue's toRefs(state) destructure is correctly NOT flagged. The
+			// recorded LLM fix switches the destructure to toRefs() (+ import). After the
+			// fix no reactive() destructure remains, so detector-clears (re-running
+			// detect.sh) matches zero; command:verify.sh extracts the script and tsc's
+			// it. NO compile/tests:affected. RequiredTools=["python3","node","tsc"]
+			// (python3 for extraction, node/tsc for the type-check gate).
+			Name:          "vue-reactivity-misuse",
+			SpeciesDir:    filepath.Join(speciesRoot, "vue-reactivity-misuse"),
+			RepoDir:       filepath.Join("testdata", "vue-reactivity-misuse", "repo"),
+			GoldenPath:    filepath.Join("testdata", "vue-reactivity-misuse", "fix.golden"),
+			RequiredTools: []string{"python3", "node", "tsc"},
+			Fixer:         fixture.RecordedFixer(engine.FileDiff{Path: "src/components/Counter.vue", Patch: vueReactivityMisusePatch}),
+		},
+		{
+			// vue-v-html-xss (Sprint 025 JS/TS + Vue wave, SECURITY stage): the COMMAND
+			// detector that covers .vue without an engine change. detect.sh scans each
+			// *.vue <template> region (line-preserving) for a `v-html` binding — an XSS
+			// sink that renders raw, unsanitized HTML — and emits a finding on the real
+			// .vue line (Comment.vue line 6). Safe.vue's {{ label }} interpolation is
+			// correctly NOT flagged (discrimination). The recorded LLM fix replaces the
+			// v-html binding with {{ }} interpolation (HTML-escapes the value). After the
+			// fix no v-html binding remains, so detector-clears (re-running detect.sh)
+			// matches zero; command:verify.sh grep-clears that no v-html survives (the
+			// security remediation proof) and vue-tsc's the SFC when present. NO
+			// compile/tests:affected (vacuous Go pass on a Vue repo). The detector and
+			// verifier NEVER execute the SFC — text scan only. RequiredTools=["python3",
+			// "node"] (python3 for the scan/grep-clears, node for the vue-tsc gate).
+			Name:          "vue-v-html-xss",
+			SpeciesDir:    filepath.Join(speciesRoot, "vue-v-html-xss"),
+			RepoDir:       filepath.Join("testdata", "vue-v-html-xss", "repo"),
+			GoldenPath:    filepath.Join("testdata", "vue-v-html-xss", "fix.golden"),
+			RequiredTools: []string{"python3", "node"},
+			Fixer:         fixture.RecordedFixer(engine.FileDiff{Path: "src/components/Comment.vue", Patch: vueVHtmlXSSPatch}),
 		},
 	}
 }
@@ -1143,6 +1261,60 @@ const unsafeTempFilePatch = `--- a/repo.go
  }
 `
 
+// The Sprint 025 JS/TS + Vue recorded LLM fix responses (TECHSPEC §10 — no live
+// model in CI). Each is the unified-diff patch a correctly-prompted model would
+// return for the fixture's single finding; the harness drives it through the REAL
+// verifier gate (detector-clears + a tsc --noEmit command:verify.sh — NO Go
+// compile/tests:affected on a JS/TS repo, sprint-025 contract), so the recorded
+// fix is accepted only if it genuinely clears the detector and type-checks.
+
+// tsNoExplicitAnyPatch narrows `let total: any = 0` to `let total = 0` (tsc infers
+// number). After the fix no `any` predefined_type node remains, so detector-clears
+// matches zero; tsc --noEmit confirms the inferred type is sound.
+const tsNoExplicitAnyPatch = `--- a/app/parse.ts
++++ b/app/parse.ts
+@@ -5,1 +5,1 @@
+-	let total: any = 0;
++	let total = 0;
+`
+
+// inertiaRawResponsePatch rewrites the raw `return res.json({ user })` in the
+// Inertia controller's show() action to an Inertia page render. After the fix no
+// raw res.json() return remains in the controller, so detector-clears matches
+// zero; tsc --noEmit confirms the rewrite type-checks (Inertia.render is imported).
+const inertiaRawResponsePatch = `--- a/app/Controllers/UserController.ts
++++ b/app/Controllers/UserController.ts
+@@ -17,1 +17,1 @@
+-	return res.json({ user });
++	return Inertia.render("Users/Show", { user });
+`
+
+// vueReactivityMisusePatch switches the reactive() destructure in Counter.vue's
+// <script setup> to toRefs(state) (and imports toRefs). After the fix the
+// destructure no longer matches the reactive()-destructure rule, so detector-clears
+// (re-running detect.sh) matches zero; the extracted-script tsc gate type-checks.
+const vueReactivityMisusePatch = `--- a/src/components/Counter.vue
++++ b/src/components/Counter.vue
+@@ -2,1 +2,1 @@
+-import { reactive } from "vue";
++import { reactive, toRefs } from "vue";
+@@ -5,1 +5,1 @@
+-const { count, label } = state;
++const { count, label } = toRefs(state);
+`
+
+// vueVHtmlXSSPatch (Sprint 025 JS/TS + Vue SECURITY) replaces the raw `v-html`
+// binding in Comment.vue's template with `{{ }}` interpolation, which HTML-escapes
+// the value and closes the XSS sink. After the fix no v-html binding remains, so
+// detector-clears (re-running detect.sh) matches zero and the verifier's grep-clears
+// security gate passes; the (optional) vue-tsc gate confirms the SFC still parses.
+const vueVHtmlXSSPatch = `--- a/src/components/Comment.vue
++++ b/src/components/Comment.vue
+@@ -6,1 +6,1 @@
+-	<div class="comment" v-html="body"></div>
++	<div class="comment">{{ body }}</div>
+`
+
 // TestTodoExpiredReportOnly drives the Sprint 019 report-only species through the
 // detect-only harness: it asserts the species produces findings (the three seeded
 // stale markers — a dated TODO, an issue-referenced FIXME, and a HACK) but
@@ -1158,6 +1330,36 @@ func TestTodoExpiredReportOnly(t *testing.T) {
 		SpeciesDir: filepath.Join(speciesRoot, "todo-expired"),
 		RepoDir:    filepath.Join("testdata", "todo-expired", "repo"),
 	}, 3)
+}
+
+// TestImportSortJSBackfill proves the Sprint 025 js-multilang-backfill: import-sort's
+// new `language: javascript` doc fires on a .js file. import-sort is a tool-runner
+// orchestration species whose fix needs the real organizer, and its fake organizer
+// (sortImportLines) handles only Go import groups — so the JS coverage is proven at
+// the DETECT layer (the doc nominates the marked out-of-order JS imports) via the
+// detect-only harness, which asserts the finding is produced and the tree is
+// byte-unchanged. The fix path stays covered by the Go import-sort golden case.
+func TestImportSortJSBackfill(t *testing.T) {
+	fixture.RunDetectOnlyCase(t, fixture.Case{
+		Name:       "import-sort-js",
+		SpeciesDir: filepath.Join(speciesRoot, "import-sort"),
+		RepoDir:    filepath.Join("testdata", "import-sort-js", "repo"),
+	}, 1)
+}
+
+// TestAiSlopJSBackfill proves the Sprint 025 js-multilang-backfill: ai-slop's new
+// `language: javascript` doc fires on a .js file (a redundant `const` declared and
+// immediately returned). ai-slop ships DISABLED by default and is a fuzzy,
+// propose-only candidate-tier species whose Go golden uses a single recorded LLM
+// patch (which cannot also serve a second JS finding), so the JS coverage is proven
+// at the DETECT layer via the detect-only harness rather than perturbing the
+// recorded-fix golden. The fix path stays covered by the Go ai-slop golden case.
+func TestAiSlopJSBackfill(t *testing.T) {
+	fixture.RunDetectOnlyCase(t, fixture.Case{
+		Name:       "ai-slop-js",
+		SpeciesDir: filepath.Join(speciesRoot, "ai-slop"),
+		RepoDir:    filepath.Join("testdata", "ai-slop-js", "repo"),
+	}, 1)
 }
 
 // TestDuplicateCIStepReportOnly drives the duplicate-ci-step species through the

@@ -1,0 +1,5 @@
+--- a/app/Controllers/UserController.ts
++++ b/app/Controllers/UserController.ts
+@@ -17,1 +17,1 @@
+-	return res.json({ user });
++	return Inertia.render("Users/Show", { user });

@@ -6,3 +6,7 @@
 +++ b/repo.ts
 @@ -9,1 +9,0 @@
 -  const scratch = a * b;
+--- a/web/calc.js
++++ b/web/calc.js
+@@ -5,1 +5,0 @@
+-	const perimeter = 2 * (w + h);

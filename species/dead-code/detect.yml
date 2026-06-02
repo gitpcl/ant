@@ -26,3 +26,22 @@ rule:
   follows:
     kind: comment
     regex: 'ant:dead-code'
+---
+# Sprint 025 js-multilang-backfill: the JavaScript analog of a marked dead Go
+# `func` is a marked top-level `function` declaration. `language: javascript` fires
+# on .js/.jsx so the shared species now removes a marked dead function in plain
+# JavaScript too. The existing Go `.go` doc above is a separate `---` document and
+# is untouched. Trust is unchanged (delete-match + the species' verify gate); on a
+# JS repo `compile` is a vacuous Go-build pass, so detector-clears is the proof.
+id: dead-code-js
+language: javascript
+severity: warning
+message: 'Declaration marked //ant:dead-code is unreferenced and can be removed'
+rule:
+  pattern: |
+    function $NAME($$$PARAMS) {
+      $$$BODY
+    }
+  follows:
+    kind: comment
+    regex: 'ant:dead-code'

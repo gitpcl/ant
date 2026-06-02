@@ -1,0 +1,22 @@
+# ast-grep rule for vue-reactivity-misuse, run by detect.sh over the temp .ts
+# extracted from each .vue <script setup> block (see detect.sh header for the
+# extraction/line-mapping strategy).
+#
+# Smell: destructuring a reactive() proxy — `const { a, b } = state` where `state`
+# was declared `const state = reactive(...)`. Destructuring copies the current
+# primitive values out of the proxy, severing reactivity (Vue 3 footgun). The
+# `inside ... has: const $OBJ = reactive(...)` clause ties the destructured
+# identifier back to its reactive() declaration in the same script block, so a
+# destructure of a plain object — or of a `toRefs(state)` result — does NOT match.
+id: vue-reactivity-misuse
+language: typescript
+severity: warning
+message: 'Destructuring a reactive() object loses reactivity; use toRefs() or access via the proxy'
+rule:
+  pattern: const { $$$NAMES } = $OBJ
+  inside:
+    kind: program
+    stopBy: end
+    has:
+      pattern: const $OBJ = reactive($$$ARGS)
+      stopBy: end

@@ -1,0 +1,49 @@
+# Detector rule for the inertia-raw-response species (LLM-assisted, propose-only —
+# Sprint 025 JS/TS + Vue wave). Templated on laravel-env-call (the path-confined
+# `files`/`ignores` discrimination) + unchecked-type-assertion.
+#
+# Inertia interpretation: an Inertia controller action is supposed to return an
+# Inertia page response via `Inertia.render('Page', props)` (or the `inertia()`
+# helper), which the client-side adapter turns into a Vue page visit. Returning a
+# RAW JSON response (`res.json(...)` / `response.json(...)`) from an action on an
+# Inertia route instead bypasses Inertia entirely: the browser receives bare JSON
+# rather than a page, breaking the SPA navigation. This rule nominates a
+# `return res.json($$$)` / `return response.json($$$)` statement.
+#
+# DISCRIMINATION: the scan is CONFINED to Inertia controller paths via the
+# `files` glob (`**/Controllers/**`, `**/controllers/**`) so a genuine JSON API
+# handler elsewhere in the tree is NOT flagged — only a raw JSON return from a
+# controller that should be rendering an Inertia page. `Inertia.render(...)`
+# returns do not match the `res.json(...)` pattern, so a correct action is never
+# flagged. Two `---` docs cover .ts/.tsx (`typescript`) and .js/.jsx
+# (`javascript`).
+#
+# Per ADR-0004 this is a CANDIDATE-tier detector: ast-grep nominates the raw JSON
+# return; the LLM fix rewrites it to `Inertia.render('Page', props)`;
+# detector-clears + a `tsc --noEmit` command verifier confirm no raw res.json()
+# remains in the controller and the rewrite type-checks. compile/tests:affected
+# are omitted (vacuous Go-build pass on a JS/TS repo, sprint-025 contract).
+# severity `warning` so `ast-grep scan` exits 0 on a match.
+id: inertia-raw-response-ts
+language: typescript
+severity: warning
+message: 'Raw res.json() returned from an Inertia controller; render an Inertia page via Inertia.render(...) instead'
+files:
+  - "**/Controllers/**"
+  - "**/controllers/**"
+rule:
+  any:
+    - pattern: return res.json($$$ARGS)
+    - pattern: return response.json($$$ARGS)
+---
+id: inertia-raw-response-js
+language: javascript
+severity: warning
+message: 'Raw res.json() returned from an Inertia controller; render an Inertia page via Inertia.render(...) instead'
+files:
+  - "**/Controllers/**"
+  - "**/controllers/**"
+rule:
+  any:
+    - pattern: return res.json($$$ARGS)
+    - pattern: return response.json($$$ARGS)

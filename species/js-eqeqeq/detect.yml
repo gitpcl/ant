@@ -1,0 +1,73 @@
+# Detector rule for the js-eqeqeq species (deterministic rewrite — Sprint 025
+# JS/TS + Vue wave). Templated on redundant-conversion (the rewrite transform),
+# extended to plain JavaScript with `language: javascript` docs.
+#
+# JS/TS interpretation: the loose-equality operators `==` / `!=` apply implicit
+# type coercion (`0 == ""`, `1 == "1"`, `null == undefined` all true), a classic
+# source of subtle bugs. The strict operators `===` / `!==` compare without
+# coercion and are the recommended default (the eslint `eqeqeq` rule). This
+# species deterministically REWRITES `$A == $B` → `$A === $B` and `$A != $B` →
+# `$A !== $B`, splicing the rewrite into the verbatim source line so the rest of
+# the line and indentation are preserved.
+#
+# DISCRIMINATION (the fixture proves it): the `== null` / `!= null` idiom — and
+# its `undefined` form — is a DELIBERATE loose comparison that matches both null
+# AND undefined in one check; rewriting it to `===` would change behavior. So the
+# right-hand side is constrained to NOT be `null`/`undefined`, leaving those
+# idiomatic comparisons untouched. Already-strict `===`/`!==` do not match the
+# `==`/`!=` pattern, so they are never double-rewritten.
+#
+# Four `---` docs (the multi-document convention from
+# species/unused-variable/detect.yml): {== , !=} × {typescript, javascript}.
+# `language: typescript` fires on .ts/.tsx; `language: javascript` on .js/.jsx.
+# Trust: detector-clears re-runs this rule and requires zero matches (the rewritten
+# strict operators no longer match), and the `tsc --noEmit` command verifier proves
+# the post-rewrite tree still type-checks. compile/tests:affected are omitted
+# (vacuous Go-build pass on a JS/TS repo, sprint-025 contract).
+id: js-eqeqeq-eq-ts
+language: typescript
+severity: warning
+message: 'Loose equality `==` coerces types; use strict `===`'
+rule:
+  pattern: $A == $B
+constraints:
+  B:
+    not:
+      regex: '^(null|undefined)$'
+fix: '$A === $B'
+---
+id: js-eqeqeq-ne-ts
+language: typescript
+severity: warning
+message: 'Loose inequality `!=` coerces types; use strict `!==`'
+rule:
+  pattern: $A != $B
+constraints:
+  B:
+    not:
+      regex: '^(null|undefined)$'
+fix: '$A !== $B'
+---
+id: js-eqeqeq-eq-js
+language: javascript
+severity: warning
+message: 'Loose equality `==` coerces types; use strict `===`'
+rule:
+  pattern: $A == $B
+constraints:
+  B:
+    not:
+      regex: '^(null|undefined)$'
+fix: '$A === $B'
+---
+id: js-eqeqeq-ne-js
+language: javascript
+severity: warning
+message: 'Loose inequality `!=` coerces types; use strict `!==`'
+rule:
+  pattern: $A != $B
+constraints:
+  B:
+    not:
+      regex: '^(null|undefined)$'
+fix: '$A !== $B'
