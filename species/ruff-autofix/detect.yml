@@ -1,0 +1,25 @@
+# Detector rule for the ruff-autofix species (tool-runner fix — Sprint 024 Python/
+# FastAPI wave; auto_apply). Templated on species/lint-autofix.
+#
+# ORCHESTRATION species: ruff's own safe autofixer (`ruff check --fix`) resolves
+# the findings; Ant wraps it in the staging/review/trust model and gates the
+# result with formatter-idempotence + a `python -m py_compile` command verifier.
+# ast-grep only NOMINATES a file for autofixing — it matches a
+# `function_definition` the author marked with a `# ant:ruff-autofix` doc comment
+# (the established marker convention). The wrapped tool decides what is
+# auto-fixable; the engine does not.
+#
+# Trust rests on formatter-idempotence (the autofixer converges on a second run)
+# plus the py_compile parse gate (a fix that broke the syntax is skipped).
+# `compile`/`tests:affected` are omitted — on a non-Go repo the Go-build gate is a
+# vacuous pass (sprint-024 contract). detector-clears is not used — re-running
+# ast-grep over a tool-resolved file is the wrong gate (same as lint-autofix).
+id: ruff-autofix
+language: python
+severity: info
+message: 'File marked # ant:ruff-autofix has auto-fixable lint findings; running the safe ruff autofixer'
+rule:
+  kind: function_definition
+  follows:
+    kind: comment
+    regex: 'ant:ruff-autofix'

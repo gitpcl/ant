@@ -1,0 +1,38 @@
+name        = "ruff-format"
+description = "Runs `ruff format` over drifted Python files and stages the reformatted result"
+severity    = "low"
+languages   = ["py"]
+auto_apply  = true
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# Tool-runner fix (Sprint 017, reused by Sprint 024 Python wave): exec `ruff
+# format` on a scratch copy and capture the reformatted file as the diff. The
+# command is DECLARATIVE — `ruff format` here for Python, exactly as
+# formatter-drift names `gofmt` for Go and pint-format names `pint` for PHP. No
+# Python tool is special-cased in the engine; the tool-runner substitutes {file}
+# with the scratch copy's path. The fixture overrides this with a FAKE formatter
+# on PATH so CI needs no real ruff.
+[fix]
+kind    = "tool"
+command = "ruff"
+args    = ["format", "{file}"]
+timeout = "60s"
+
+# formatter-idempotence re-runs the SAME formatter over the post-fix tree and
+# asserts no further changes (a stable formatter converges; an oscillating one
+# fails — a trust signal). This is the ONLY gate: `compile`/`tests:affected` are
+# DELIBERATELY OMITTED for the Python wave — on a non-Go repo the hardcoded
+# `go build ./...` compile gate is a vacuous pass, so it would prove nothing
+# (sprint-024 contract). `ruff format` normalizes layout, it does not remove the
+# marker the detector matched, so detector-clears is the wrong gate (same as
+# formatter-drift). Real proof for this tool species is formatter-idempotence.
+[verify]
+checks = ["formatter-idempotence"]
+
+[verify.tool]
+command = "ruff"
+args    = ["format", "--check", "{file}"]

@@ -1,0 +1,5 @@
+--- a/app/routes.py
++++ b/app/routes.py
+@@ -14,1 +14,1 @@
+-def read_items():
++async def read_items():

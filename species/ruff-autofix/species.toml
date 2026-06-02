@@ -1,0 +1,40 @@
+name        = "ruff-autofix"
+description = "Runs the safe `ruff check --fix` subset over Python files and stages the result"
+severity    = "low"
+languages   = ["py"]
+auto_apply  = true
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# Tool-runner fix (Sprint 017, reused by Sprint 024 Python wave): exec the
+# linter's SAFE autofixer (`ruff check --fix`) on a scratch copy and capture the
+# resolved subset. DECLARATIVE command — ruff here, exactly as Go's lint-autofix
+# names ruff/eslint/clippy. Only ruff's own safe/auto-fixable subset is applied
+# (the engine does not decide what is safe — the wrapped tool does). The fixture
+# overrides this with a FAKE autofixer on PATH so CI needs no real ruff. {file} is
+# the scratch path.
+[fix]
+kind    = "tool"
+command = "ruff"
+args    = ["check", "--fix", "{file}"]
+timeout = "60s"
+
+# formatter-idempotence re-runs `ruff check --fix` over the post-fix tree and
+# asserts no further changes (a stable autofixer converges). command:verify.sh
+# runs `python -m py_compile` over the changed Python so an autofix that left a
+# syntax error is skipped — the parse gate the sprint-024 contract requires in
+# place of the (vacuous on a non-Go repo) Go-build compile check.
+# `compile`/`tests:affected` are DELIBERATELY OMITTED (vacuous Go pass). Real
+# proof = formatter-idempotence + py_compile, gated by
+# RequiredTools=["python3","ruff"] for the CI skip. detector-clears is omitted —
+# re-running ast-grep over a tool-resolved file is the wrong gate (lint-autofix).
+[verify]
+checks      = ["formatter-idempotence", "command:verify.sh"]
+interpreter = "sh"
+
+[verify.tool]
+command = "ruff"
+args    = ["check", "--fix", "{file}"]

@@ -1,0 +1,30 @@
+name        = "fastapi-sync-route-blocking"
+description = "Flags a plain (non-async) def under a FastAPI route decorator that can block the event loop; propose-only"
+severity    = "medium"
+languages   = ["py"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# LLM-assisted fix (templated on missing-await): make the route `async def` (or
+# offload blocking work to a threadpool via `run_in_threadpool` / `def` +
+# `Depends`), so a slow handler no longer blocks the single event loop. The right
+# transformation depends on what the body does (pure-async vs blocking I/O), so
+# the fix is a judgement the model makes — propose-only.
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+# detector-clears re-runs THIS rule over the patched scratch tree and requires
+# zero matches (no plain def remains under a route decorator). command:verify.sh
+# runs `python -m py_compile` so a rewrite that broke the syntax is skipped.
+# `compile`/`tests:affected` are DELIBERATELY OMITTED: on a non-Go repo the
+# Go-build compile gate is a vacuous pass (sprint-024 contract). Real proof =
+# detector-clears + py_compile, gated by RequiredTools=["python3"] for the CI
+# skip.
+[verify]
+checks      = ["detector-clears", "command:verify.sh"]
+interpreter = "sh"

@@ -137,4 +137,82 @@ func TestOrchestrationSpeciesFixtures(t *testing.T) {
 			ToolArgs:    []string{"fix", fixture.PlaceholderFile},
 		})
 	})
+
+	// ruff-format (Sprint 024 Python wave): templated on formatter-drift/pint-format.
+	// The detector nominates a function marked `# ant:ruff-format`; the tool-runner
+	// runs a FAKE `ruff` (the stripTrailingWSLastArg stand-in — a real `ruff format`
+	// would do the same trailing-whitespace normalization) over the whole file, and
+	// the SAME fake re-runs as the formatter-idempotence gate (no further change =
+	// converged). No compile/tests:affected gate — on a non-Go repo that is a vacuous
+	// Go-build pass (sprint-024 contract); formatter-idempotence is the genuine proof.
+	// The fixture file is valid Python so a real `python -m py_compile` would parse it.
+	t.Run("ruff-format", func(t *testing.T) {
+		writeFakeTool(t, "ruff", stripTrailingWSLastArg)
+		fixture.RunCase(t, fixture.Case{
+			Name:        "ruff-format",
+			SpeciesDir:  filepath.Join("..", "ruff-format"),
+			RepoDir:     filepath.Join("testdata", "ruff-format", "repo"),
+			GoldenPath:  filepath.Join("testdata", "ruff-format", "fix.golden"),
+			ToolCommand: "ruff",
+			ToolArgs:    []string{"format", fixture.PlaceholderFile},
+		})
+	})
+
+	// ruff-autofix (Sprint 024 Python wave): templated on lint-autofix. The detector
+	// nominates a function marked `# ant:ruff-autofix`; the tool-runner runs a FAKE
+	// `ruff` (the stripTrailingWSLastArg stand-in for `ruff check --fix`, reading the
+	// scratch path from the LAST arg since {file} trails the subcommand flags), and
+	// the same fake re-runs as the formatter-idempotence gate. This species ALSO
+	// declares a `command:verify.sh` py_compile gate — RunCase runs the species'
+	// declared verifier chain (formatter-idempotence + command:verify.sh) against the
+	// scratch tree, so the py_compile parse check runs for real here (python3 is a
+	// host tool, not faked). No compile/tests:affected (vacuous Go pass, sprint-024).
+	t.Run("ruff-autofix", func(t *testing.T) {
+		writeFakeTool(t, "ruff", stripTrailingWSLastArg)
+		fixture.RunCase(t, fixture.Case{
+			Name:          "ruff-autofix",
+			SpeciesDir:    filepath.Join("..", "ruff-autofix"),
+			RepoDir:       filepath.Join("testdata", "ruff-autofix", "repo"),
+			GoldenPath:    filepath.Join("testdata", "ruff-autofix", "fix.golden"),
+			ToolCommand:   "ruff",
+			ToolArgs:      []string{"check", "--fix", fixture.PlaceholderFile},
+			RequiredTools: []string{"python3"},
+		})
+	})
+
+	// black-format (Sprint 024 Python wave): templated on formatter-drift. It SHIPS
+	// DISABLED by default (species.toml enabled=false) because it overlaps ruff-format
+	// — a project enables one or the other. The harness drives the detect→fix→verify
+	// path regardless of the runtime enabled flag (enabled=false is a resolution-time
+	// concern); TestEmbed_BuiltinsDiscoverableNoDisk asserts it resolves disabled. Same
+	// formatter-idempotence-only gate as ruff-format.
+	t.Run("black-format", func(t *testing.T) {
+		writeFakeTool(t, "black", stripTrailingWSLastArg)
+		fixture.RunCase(t, fixture.Case{
+			Name:        "black-format",
+			SpeciesDir:  filepath.Join("..", "black-format"),
+			RepoDir:     filepath.Join("testdata", "black-format", "repo"),
+			GoldenPath:  filepath.Join("testdata", "black-format", "fix.golden"),
+			ToolCommand: "black",
+			ToolArgs:    []string{fixture.PlaceholderFile},
+		})
+	})
+
+	// isort-imports (Sprint 024 Python wave): templated on import-sort. The detector
+	// nominates a function marked `# ant:isort-imports`; the tool-runner runs a FAKE
+	// import organizer (the stripTrailingWSLastArg stand-in for `ruff check --select I
+	// --fix`, reading the scratch path from the LAST arg)
+	// and the same fake re-runs as the formatter-idempotence gate. No
+	// compile/tests:affected (vacuous Go pass, sprint-024). The fixture is valid Python.
+	t.Run("isort-imports", func(t *testing.T) {
+		writeFakeTool(t, "ruff", stripTrailingWSLastArg)
+		fixture.RunCase(t, fixture.Case{
+			Name:        "isort-imports",
+			SpeciesDir:  filepath.Join("..", "isort-imports"),
+			RepoDir:     filepath.Join("testdata", "isort-imports", "repo"),
+			GoldenPath:  filepath.Join("testdata", "isort-imports", "fix.golden"),
+			ToolCommand: "ruff",
+			ToolArgs:    []string{"check", "--select", "I", "--fix", fixture.PlaceholderFile},
+		})
+	})
 }

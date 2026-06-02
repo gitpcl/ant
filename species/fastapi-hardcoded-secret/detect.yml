@@ -1,0 +1,49 @@
+# Detector rule for the fastapi-hardcoded-secret species (LLM-assisted, SECURITY-
+# stage — Sprint 024 Python/FastAPI wave). Templated on hardcoded-secret (the Go
+# multi-file env-var fixer) and the PHP laravel-mass-assignment SECURITY shape.
+#
+# A secret committed as a string literal in source — `SECRET_KEY = "..."`,
+# `API_KEY = "..."`, `PASSWORD = "..."` — is exposed to everyone with repo access,
+# preserved forever in git history, and cannot be rotated without a code change.
+# In a FastAPI app these typically live in a settings module / `Settings` class,
+# exactly where a hardcoded value leaks the deployment's credentials.
+#
+# The rule matches an `assignment` node where BOTH:
+#   - the LEFT target's identifier text matches a credential name
+#     (SECRET / API_KEY / PASSWORD / PASSWD / TOKEN / APIKEY / PRIVATE_KEY /
+#     ACCESS_KEY) — case-sensitive on the conventional UPPER_SNAKE config names, and
+#   - the RIGHT side is a `string` LITERAL.
+# Requiring the right side to be a string literal is the load-bearing
+# discriminator: it flags ONLY a literal value and leaves alone (a) a value already
+# read from the environment (`SECRET_KEY = os.environ["SECRET_KEY"]` /
+# `os.getenv(...)`) — the right side there is a subscript/call, not a string, so NO
+# match — the fixed shape, and (b) a non-secret-named target
+# (`DATABASE_URL = "..."`, `DEBUG = "..."`) whose name does not match the regex.
+# A non-string secret-named assignment (`PASSWORD_MIN_LENGTH = 8`) is also not
+# matched (the right side is an integer). That literal-vs-env discrimination is
+# exactly what the security stage requires.
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: ast-grep NOMINATES the
+# secret-literal-assignment smell; it cannot prove the literal is a live
+# credential. The LLM fix removes the literal, reads the value from the environment
+# (`os.environ[...]` / `os.getenv(...)`), and records the variable in .env.example
+# (a multi-file rewrite); detector-clears (no secret-named target still assigned a
+# string literal remains) + a `python -m py_compile` command verifier (the file
+# still parses) confirm the specific finding. compile/tests:affected are omitted
+# (vacuous Go-build pass on a non-Go repo, sprint-024 contract). severity `warning`
+# so `ast-grep scan` exits 0 on a match. auto_apply is false: relocating a
+# credential is a security change a human must confirm — and the exposed value must
+# still be ROTATED out of band — so the env-var rewrite is always staged.
+id: fastapi-hardcoded-secret
+language: python
+severity: warning
+message: 'Hardcoded secret assigned as a string literal (SECRET_KEY/API_KEY/PASSWORD = "...") — a committed credential is leaked to repo history; read it from the environment (os.environ[...]/os.getenv(...)) and record the variable in .env.example (and ROTATE the exposed value)'
+rule:
+  kind: assignment
+  all:
+    - has:
+        field: left
+        regex: '(SECRET|API_KEY|PASSWORD|PASSWD|TOKEN|APIKEY|PRIVATE_KEY|ACCESS_KEY)'
+    - has:
+        field: right
+        kind: string

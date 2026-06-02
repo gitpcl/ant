@@ -36,6 +36,7 @@ A `yes` cell means the capability applies; `-` means it does not.
 | Species | ast-grep | command/script | external tool | LLM / network | report-only |
 | --- | --- | --- | --- | --- | --- |
 | `ai-slop` | yes | - | ast-grep | yes | - |
+| `black-format` | - | yes | black | - | - |
 | `dead-code` | yes | - | ast-grep | - | - |
 | `dead-config` | - | yes | - | - | - |
 | `deep-nesting` | yes | - | ast-grep | yes | - |
@@ -43,12 +44,16 @@ A `yes` cell means the capability applies; `-` means it does not.
 | `duplicate-code-small` | yes | - | ast-grep | yes | - |
 | `duplicate-condition` | yes | - | ast-grep | - | - |
 | `empty-block` | yes | - | ast-grep | - | - |
+| `fastapi-depends-default-arg` | yes | - | ast-grep | yes | - |
+| `fastapi-hardcoded-secret` | yes | - | ast-grep | yes | - |
+| `fastapi-sync-route-blocking` | yes | - | ast-grep | yes | - |
 | `formatter-drift` | - | yes | gofmt | - | - |
 | `hardcoded-secret` | - | yes | - | yes | - |
 | `ignored-error` | yes | - | ast-grep | yes | - |
 | `import-sort` | - | yes | goimports | - | - |
 | `ineffective-assignment` | yes | - | ast-grep | - | - |
 | `insecure-random` | yes | - | ast-grep | yes | - |
+| `isort-imports` | - | yes | ruff | - | - |
 | `laravel-dd-dump-debug` | yes | - | ast-grep | - | - |
 | `laravel-env-call` | yes | - | ast-grep | yes | - |
 | `laravel-mass-assignment` | yes | - | ast-grep | yes | - |
@@ -65,9 +70,14 @@ A `yes` cell means the capability applies; `-` means it does not.
 | `nil-deref` | yes | - | ast-grep | yes | - |
 | `php-cs-fixer` | - | yes | php-cs-fixer | - | - |
 | `pint-format` | - | yes | pint | - | - |
+| `python-bare-except` | yes | - | ast-grep | yes | - |
+| `python-debug-print` | yes | - | ast-grep | - | - |
+| `python-sql-fstring` | yes | - | ast-grep | yes | - |
 | `redundant-conversion` | yes | - | ast-grep | - | - |
 | `redundant-nil-check` | yes | - | ast-grep | - | - |
 | `resource-leak` | yes | - | ast-grep | yes | - |
+| `ruff-autofix` | - | yes | ruff | - | - |
+| `ruff-format` | - | yes | ruff | - | - |
 | `sql-string-concat` | yes | - | ast-grep | yes | - |
 | `stale-dependency-pin` | - | yes | - | - | - |
 | `todo-expired` | yes | - | ast-grep | - | yes |

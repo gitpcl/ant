@@ -1,0 +1,26 @@
+# Detector rule for the isort-imports species (tool-runner fix — Sprint 024
+# Python/FastAPI wave; auto_apply). Templated on species/import-sort.
+#
+# ORCHESTRATION species: the import organizer (ruff's isort-compatible sorter, or
+# the standalone `isort`) does the real work; Ant wraps it in the staging/review/
+# trust model and gates the result with formatter-idempotence. ast-grep only
+# NOMINATES a file as an import-order candidate — it matches a
+# `function_definition` marked with a `# ant:isort-imports` doc comment (the
+# established marker convention; a top-level marker before the first def stands in
+# for "this file's imports need organizing").
+#
+# After the tool-runner reorders the imports, formatter-idempotence re-runs the
+# sorter and requires zero further changes (a non-deterministic organizer FAILS).
+# detector-clears is omitted — sorting normalizes order, it does not remove the
+# marker anchor. `compile`/`tests:affected` are omitted (vacuous Go-build pass on
+# a non-Go repo, sprint-024 contract); the genuine proof is formatter-idempotence
+# plus the species' RequiredTools=["python3","ruff"] CI skip.
+id: isort-imports
+language: python
+severity: info
+message: 'File marked # ant:isort-imports has unsorted imports; organizing them'
+rule:
+  kind: function_definition
+  follows:
+    kind: comment
+    regex: 'ant:isort-imports'

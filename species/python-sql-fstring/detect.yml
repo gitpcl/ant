@@ -1,0 +1,48 @@
+# Detector rule for the python-sql-fstring species (LLM-assisted, SECURITY-stage
+# — Sprint 024 Python/FastAPI wave). Templated on sql-string-concat and the PHP
+# laravel-raw-where-concat.
+#
+# Python SQL-injection via f-string interpolation: a SQL statement passed to a DB
+# cursor call (`cur.execute(...)`) or a SQLAlchemy `text(...)` construct must NOT
+# be assembled by interpolating a runtime value into an f-string. An f-string
+# splices the value straight into the SQL TEXT (`execute(f"... WHERE id = {x}")`),
+# so an attacker-controlled value is parsed as SQL rather than bound as data — the
+# canonical injection vector (auth bypass, data exfiltration, schema damage). The
+# safe pattern is a bound parameter: a driver placeholder (`?` / `%s` / `:name`)
+# in a PLAIN (non-f) string literal plus the value passed in the call's params
+# argument (`execute("... WHERE id = ?", (x,))`), which the driver binds as data.
+#
+# The rule matches an `.execute(...)` call (any receiver) OR a `text(...)` call
+# that HAS, anywhere in its arguments, a `string` node that itself contains an
+# `interpolation` (the `{...}` of an f-string). Requiring the interpolation is the
+# load-bearing discriminator: it flags ONLY f-strings with a substituted value and
+# leaves alone (a) a plain string literal `execute("SELECT ...")`, (b) an
+# already-parameterized `execute(sql, params)` call (the SQL is a Name, not a
+# string literal — no match), and (c) a literal f-string with no placeholder
+# `f"static"` (a `string` with no `interpolation` child). That bound-vs-
+# interpolated discrimination is exactly what the security stage requires.
+#
+# Per ADR-0004 this is a CANDIDATE-tier syntactic detector: ast-grep NOMINATES the
+# SQL-built-by-f-string smell; it cannot prove the value is attacker-controlled.
+# The LLM fix moves the value(s) to bound parameters; detector-clears (no
+# execute/text call with an interpolated f-string remains) + a `python -m
+# py_compile` command verifier (the file still parses) confirm the specific
+# finding. compile/tests:affected are omitted (vacuous Go-build pass on a non-Go
+# repo, sprint-024 contract). severity `warning` so `ast-grep scan` exits 0 on a
+# match. auto_apply is false: SQL injection is a security risk and the right
+# binding is a review judgement, so the parameterized rewrite is always staged for
+# a human.
+id: python-sql-fstring
+language: python
+severity: warning
+message: 'SQL built by an f-string interpolated into a DB call (cur.execute(f"... {value}") / text(f"...")) — the interpolated value is parsed as SQL, a SQL-injection vector; move it to a bound parameter (a `?`/`%s`/`:name` placeholder + a params tuple/dict)'
+rule:
+  any:
+    - pattern: $C.execute($$$ARGS)
+    - pattern: text($$$ARGS)
+  has:
+    kind: string
+    stopBy: end
+    has:
+      kind: interpolation
+      stopBy: end

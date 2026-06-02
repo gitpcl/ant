@@ -1,0 +1,10 @@
+--- a/.env.example
++++ b/.env.example
+@@ -6,1 +6,2 @@
+ API_KEY=
++SECRET_KEY=
+--- a/app/config.py
++++ b/app/config.py
+@@ -17,1 +17,1 @@
+-SECRET_KEY = "changeme-not-a-real-secret"
++SECRET_KEY = os.environ["SECRET_KEY"]

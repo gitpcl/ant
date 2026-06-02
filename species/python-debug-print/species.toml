@@ -1,0 +1,29 @@
+name        = "python-debug-print"
+description = "Flags statement-level print()/breakpoint()/pdb.set_trace() debug calls left in Python source; propose-only"
+severity    = "low"
+languages   = ["py"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# Deterministic delete-match (templated on Go's trailing-debug-code): the matched
+# statement IS the smell, so the fix removes the verbatim matched line(s). No
+# model.
+[fix]
+kind      = "deterministic"
+transform = "delete-match"
+
+# detector-clears re-runs THIS rule over the patched scratch tree and requires
+# zero matches (the print/breakpoint/pdb.set_trace statement is gone).
+# command:verify.sh runs `python -m py_compile` over the changed Python so a
+# removal that left a syntax error is skipped. `compile`/`tests:affected` are
+# DELIBERATELY OMITTED: on a non-Go repo the hardcoded `go build ./...` compile
+# gate is a vacuous pass (sprint-024 contract), so it would prove nothing. The
+# genuine proof is detector-clears + the py_compile parse gate, gated by
+# RequiredTools=["python3"] for the CI skip.
+[verify]
+checks      = ["detector-clears", "command:verify.sh"]
+interpreter = "sh"

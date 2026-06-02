@@ -1,0 +1,36 @@
+name        = "isort-imports"
+description = "Organizes and sorts Python imports via ruff's import sorter (`ruff check --select I --fix`)"
+severity    = "low"
+languages   = ["py"]
+auto_apply  = true
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# Tool-runner fix (Sprint 017, reused by Sprint 024 Python wave): exec the Python
+# import organizer on a scratch copy and capture the sorted result. DECLARATIVE
+# command — ruff's isort-compatible import sorter here (`ruff check --select I
+# --fix`), exactly as Go's import-sort names goimports; an equivalent variant
+# could name the standalone `isort`. {file} is the scratch path the runner
+# substitutes. The fixture overrides this with a FAKE import sorter on PATH so CI
+# needs no real ruff/isort.
+[fix]
+kind    = "tool"
+command = "ruff"
+args    = ["check", "--select", "I", "--fix", "{file}"]
+timeout = "60s"
+
+# Import sorting is low-risk visible cleanup: formatter-idempotence proves the
+# organizer converges (a non-deterministic one fails). This is the ONLY gate —
+# `compile`/`tests:affected` are OMITTED (vacuous Go-build pass on a non-Go repo,
+# sprint-024 contract), and detector-clears is the wrong gate (sorting normalizes
+# order, it does not remove the marker anchor). Real proof = idempotence, gated by
+# RequiredTools=["python3","ruff"] for the CI skip.
+[verify]
+checks = ["formatter-idempotence"]
+
+[verify.tool]
+command = "ruff"
+args    = ["check", "--select", "I", "--fix", "{file}"]

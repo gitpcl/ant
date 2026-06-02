@@ -431,6 +431,109 @@ func cases() []fixture.Case {
 			Fixer:         fixture.RecordedFixer(engine.FileDiff{Path: "app/Repositories/UserRepository.php", Patch: laravelRawWhereConcatPatch}),
 		},
 		{
+			// python-debug-print (Sprint 024 Python wave): templated on Go's
+			// trailing-debug-code. The ast-grep Python detector nominates the standalone
+			// `print("DEBUG: ...")` statement (the `str(print)` value reference is correctly
+			// NOT matched). The deterministic delete-match fix removes the verbatim line;
+			// the gate is detector-clears + command:verify.sh (python -m py_compile over the
+			// scratch tree) — NO compile/tests:affected (vacuous Go-build pass on a non-Go
+			// repo, sprint-024 contract). RequiredTools=["python3"] skips the case when
+			// python3 is absent, exactly as the ast-grep species skip without the matcher.
+			Name:          "python-debug-print",
+			SpeciesDir:    filepath.Join(speciesRoot, "python-debug-print"),
+			RepoDir:       filepath.Join("testdata", "python-debug-print", "repo"),
+			GoldenPath:    filepath.Join("testdata", "python-debug-print", "fix.golden"),
+			RequiredTools: []string{"python3"},
+		},
+		{
+			// fastapi-sync-route-blocking (Sprint 024 Python wave): templated on
+			// missing-await. The detector nominates a plain `def read_items()` under an
+			// `@app.get(...)` route decorator (the async `health` handler is correctly NOT
+			// matched); the recorded llm fix makes it `async def`. After the fix no plain
+			// def remains under a route decorator, so detector-clears matches zero;
+			// command:verify.sh (python -m py_compile) proves the rewrite still parses. NO
+			// compile/tests:affected.
+			Name:          "fastapi-sync-route-blocking",
+			SpeciesDir:    filepath.Join(speciesRoot, "fastapi-sync-route-blocking"),
+			RepoDir:       filepath.Join("testdata", "fastapi-sync-route-blocking", "repo"),
+			GoldenPath:    filepath.Join("testdata", "fastapi-sync-route-blocking", "fix.golden"),
+			RequiredTools: []string{"python3"},
+			Fixer:         fixture.RecordedFixer(engine.FileDiff{Path: "app/routes.py", Patch: fastapiSyncRoutePatch}),
+		},
+		{
+			// fastapi-depends-default-arg (Sprint 024 Python wave): templated on n+1-query.
+			// The detector nominates the mutable default `tags = []` (the safe immutable
+			// `page: int = 1` is correctly NOT matched); the recorded llm fix rewrites it to
+			// the `= None` sentinel plus an in-body initializer. After the fix no mutable
+			// default remains, so detector-clears matches zero; command:verify.sh (python -m
+			// py_compile) proves it parses. NO compile/tests:affected.
+			Name:          "fastapi-depends-default-arg",
+			SpeciesDir:    filepath.Join(speciesRoot, "fastapi-depends-default-arg"),
+			RepoDir:       filepath.Join("testdata", "fastapi-depends-default-arg", "repo"),
+			GoldenPath:    filepath.Join("testdata", "fastapi-depends-default-arg", "fix.golden"),
+			RequiredTools: []string{"python3"},
+			Fixer:         fixture.RecordedFixer(engine.FileDiff{Path: "app/deps.py", Patch: fastapiDependsDefaultPatch}),
+		},
+		{
+			// python-bare-except (Sprint 024 Python wave): templated on ignored-error. The
+			// detector nominates the swallowed `except Exception: pass` (the narrow, handled
+			// `except ValueError as e:` is correctly NOT matched); the recorded llm fix
+			// narrows the catch to the specific exception and handles it (log + re-raise).
+			// After the fix no bare/swallowed except remains, so detector-clears matches
+			// zero; command:verify.sh (python -m py_compile) proves it parses. NO
+			// compile/tests:affected.
+			Name:          "python-bare-except",
+			SpeciesDir:    filepath.Join(speciesRoot, "python-bare-except"),
+			RepoDir:       filepath.Join("testdata", "python-bare-except", "repo"),
+			GoldenPath:    filepath.Join("testdata", "python-bare-except", "fix.golden"),
+			RequiredTools: []string{"python3"},
+			Fixer:         fixture.RecordedFixer(engine.FileDiff{Path: "app/io.py", Patch: pythonBareExceptPatch}),
+		},
+		{
+			// python-sql-fstring (Sprint 024 Python SECURITY stage): templated on
+			// sql-string-concat / laravel-raw-where-concat. The ast-grep Python detector
+			// nominates the f-string SQL `cur.execute(f"... = {user_id}")` (the plain
+			// literal `execute("SELECT count(*) ...")` and the already-parameterized
+			// `execute(sql, (order_id,))` call are correctly NOT matched — no interpolated
+			// f-string). The recorded llm fix moves the value to a bound `?` placeholder
+			// with a params tuple (`execute("... = ?", (user_id,))`). After the fix no
+			// execute/text call with an interpolated f-string remains, so detector-clears
+			// matches zero; command:verify.sh (python -m py_compile) proves it parses. NO
+			// compile/tests:affected (vacuous Go-build pass on a non-Go repo, sprint-024
+			// contract). Propose-only (auto_apply=false). RequiredTools=["python3"] skips
+			// the case when python3 is absent.
+			Name:          "python-sql-fstring",
+			SpeciesDir:    filepath.Join(speciesRoot, "python-sql-fstring"),
+			RepoDir:       filepath.Join("testdata", "python-sql-fstring", "repo"),
+			GoldenPath:    filepath.Join("testdata", "python-sql-fstring", "fix.golden"),
+			RequiredTools: []string{"python3"},
+			Fixer:         fixture.RecordedFixer(engine.FileDiff{Path: "app/queries.py", Patch: pythonSQLFstringPatch}),
+		},
+		{
+			// fastapi-hardcoded-secret (Sprint 024 Python SECURITY stage): templated on
+			// hardcoded-secret (the multi-file env-var fixer). The ast-grep Python detector
+			// nominates the string-literal secret assignment `SECRET_KEY = "..."` (the
+			// non-secret-named `DATABASE_URL = "..."` and the env-backed
+			// `API_KEY = os.getenv(...)` are correctly NOT matched — the right side there is
+			// not a string literal). The recorded MULTI-FILE llm fix reads the value from
+			// the environment (`os.environ["SECRET_KEY"]`) and records the variable in
+			// .env.example (NAME ONLY). After the fix no secret-named target is assigned a
+			// string literal, so detector-clears matches zero; command:verify.sh (python -m
+			// py_compile) proves it parses. NO compile/tests:affected. Propose-only
+			// (auto_apply=false). Fixture uses an OBVIOUS FAKE placeholder
+			// ("changeme-not-a-real-secret") — no real credential. RequiredTools=["python3"]
+			// skips the case when python3 is absent.
+			Name:          "fastapi-hardcoded-secret",
+			SpeciesDir:    filepath.Join(speciesRoot, "fastapi-hardcoded-secret"),
+			RepoDir:       filepath.Join("testdata", "fastapi-hardcoded-secret", "repo"),
+			GoldenPath:    filepath.Join("testdata", "fastapi-hardcoded-secret", "fix.golden"),
+			RequiredTools: []string{"python3"},
+			Fixer: fixture.RecordedFixerMulti(
+				engine.FileDiff{Path: ".env.example", Patch: fastapiHardcodedSecretEnvPatch},
+				engine.FileDiff{Path: "app/config.py", Patch: fastapiHardcodedSecretConfigPatch},
+			),
+		},
+		{
 			// insecure-random is a Sprint 021 P6 SECURITY-stage species: a security-
 			// sensitive value (a session token) generated with math/rand is predictable.
 			// The ast-grep detector nominates a call to rand.Intn/Int63/… inside a
@@ -542,6 +645,88 @@ const laravelRawWhereConcatPatch = `--- a/app/Repositories/UserRepository.php
 @@ -16,1 +16,1 @@
 -        return $query->whereRaw("status = " . $status)->get();
 +        return $query->whereRaw("status = ?", [$status])->get();
+`
+
+// fastapiSyncRoutePatch (Sprint 024 Python wave) makes the blocking sync route
+// `read_items` asynchronous by changing its `def` to `async def`, so the handler
+// no longer occupies a threadpool worker for what should be event-loop work.
+// After the fix no plain def remains under a route decorator, so detector-clears
+// matches zero; the python -m py_compile command verifier confirms the file still
+// parses.
+const fastapiSyncRoutePatch = `--- a/app/routes.py
++++ b/app/routes.py
+@@ -14,1 +14,1 @@
+-def read_items():
++async def read_items():
+`
+
+// fastapiDependsDefaultPatch (Sprint 024 Python wave) replaces the shared-mutable
+// default `tags = []` with the `= None` sentinel and adds an in-body initializer
+// (`tags = tags if tags is not None else []`), so the list is created per call
+// rather than shared across calls. After the fix no mutable default remains, so
+// detector-clears matches zero; the python -m py_compile command verifier confirms
+// the file still parses.
+const fastapiDependsDefaultPatch = `--- a/app/deps.py
++++ b/app/deps.py
+@@ -11,2 +11,3 @@
+-def list_items(tags = []):
+-    tags.append("default")
++def list_items(tags = None):
++    tags = tags if tags is not None else []
++    tags.append("default")
+`
+
+// pythonBareExceptPatch (Sprint 024 Python wave) narrows the swallowing
+// `except Exception: pass` to the specific `except ValueError as e:` and HANDLES
+// it (log + re-raise) instead of discarding every error silently. After the fix
+// no bare/swallowed except remains, so detector-clears matches zero; the python -m
+// py_compile command verifier confirms the file still parses.
+const pythonBareExceptPatch = `--- a/app/io.py
++++ b/app/io.py
+@@ -14,2 +14,4 @@
+-    except Exception:
+-        pass
++    except ValueError as e:
++        log(e)
++        raise
+`
+
+// pythonSQLFstringPatch (Sprint 024 Python SECURITY) moves the interpolated
+// user_id out of the f-string SQL text into a BOUND `?` parameter passed in the
+// execute() params tuple, so the driver binds it as data and it can never be
+// parsed as SQL — the injection vector is closed. After the fix the execute call
+// has no interpolated f-string, so detector-clears matches zero; the python -m
+// py_compile command verifier confirms the file still parses.
+const pythonSQLFstringPatch = `--- a/app/queries.py
++++ b/app/queries.py
+@@ -16,1 +16,1 @@
+-    cur.execute(f"SELECT name FROM users WHERE id = {user_id}")
++    cur.execute("SELECT name FROM users WHERE id = ?", (user_id,))
+`
+
+// fastapiHardcodedSecretConfigPatch (Sprint 024 Python SECURITY) is the SOURCE
+// half of the multi-file remediation: it removes the hardcoded SECRET_KEY literal
+// and reads the value from the SECRET_KEY environment variable instead
+// (os.environ[...]; the file already imports os). After the fix no secret-named
+// target is assigned a string literal, so detector-clears finds nothing. One hunk
+// rewrites the assignment.
+const fastapiHardcodedSecretConfigPatch = `--- a/app/config.py
++++ b/app/config.py
+@@ -17,1 +17,1 @@
+-SECRET_KEY = "changeme-not-a-real-secret"
++SECRET_KEY = os.environ["SECRET_KEY"]
+`
+
+// fastapiHardcodedSecretEnvPatch (Sprint 024 Python SECURITY) is the CONFIG-
+// EXAMPLE half of the remediation: it records the new variable in .env.example as
+// NAME ONLY (no value), so deployment knows to supply SECRET_KEY at runtime while
+// the example file never carries a real secret. One hunk appends the variable
+// after the existing API_KEY line.
+const fastapiHardcodedSecretEnvPatch = `--- a/.env.example
++++ b/.env.example
+@@ -6,1 +6,2 @@
+ API_KEY=
++SECRET_KEY=
 `
 
 // ignoredErrorPatch (Sprint 018 flagship) binds the discarded error to a named

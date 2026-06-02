@@ -101,6 +101,42 @@
 // LLM-assisted, propose-only (auto_apply=false), gated by detector-clears + a
 // php -l command:verify.sh (no compile/tests:affected), and authored by the
 // security stage to the same contract.
+//
+// The Sprint 024 P8 Python/FastAPI wave adds the second non-Go-language family —
+// eight engineer-stage species declaring languages=["py"] (the SAME token the
+// pre-existing lint-autofix uses — no new spelling), authored ONLY as species
+// folders (ast-grep already parses Python via `language: python`; the tool-runner,
+// formatter-idempotence, command detector, and command:verify.sh escape hatches
+// all already exist, so no engine change). Four are tool-runner orchestration
+// species (auto_apply=true, gated by formatter-idempotence): ruff-format and
+// isort-imports (ruff's `ruff format` / `ruff check --select I --fix`) ship
+// ENABLED; black-format ships DISABLED (it overlaps ruff-format — a project enables
+// one or the other); ruff-autofix (the safe `ruff check --fix` subset) adds a
+// `command:verify.sh` py_compile gate alongside formatter-idempotence. One is a
+// deterministic delete-match, propose-only: python-debug-print (statement-level
+// print/breakpoint/pdb.set_trace), gated by detector-clears + py_compile. Three are
+// LLM-assisted, propose-only: fastapi-sync-route-blocking (a plain `def` under an
+// @app/@router route decorator -> async/offload), fastapi-depends-default-arg (a
+// mutable default `= []`/`= {}` -> `= None` + in-body init), and python-bare-except
+// (`except:` / `except Exception: pass` -> narrowed + handled). CRITICAL CONTRACT
+// (same as Sprint 023): no Python species lists `compile` or `tests:affected` — on
+// a non-Go repo the hardcoded `go build ./...` gate is a vacuous pass, so the trust
+// proof is detector-clears / formatter-idempotence / a `command:verify.sh` running
+// `python -m py_compile`, each fixture RequiredTools-gated (`python3`, plus the tool
+// for the enabled formatter species) so CI without the toolchain skips green. The
+// two SECURITY-stage Python species are authored separately by the security
+// stage to the same contract: python-sql-fstring (SQL built by an f-string
+// interpolated into cur.execute()/text() -> a bound parameter; an ast-grep
+// `language: python` detector requiring a `string` with an `interpolation` child,
+// so a plain literal and an already-parameterized `execute(sql, params)` call are
+// NOT flagged) and fastapi-hardcoded-secret (a string literal assigned to a
+// credential-named target SECRET_KEY/API_KEY/PASSWORD -> os.environ[...]/os.getenv
+// + a recorded .env.example entry, a multi-file llm fix; the right-side `string`
+// constraint leaves an env-backed `= os.getenv(...)` value and a non-secret-named
+// target NOT flagged). Both are auto_apply=false, gated by detector-clears + a
+// `python -m py_compile` command:verify.sh (no compile/tests:affected), each
+// fixture RequiredTools=["python3"]-gated; py_compile only byte-compiles and never
+// EXECUTES the post-diff repo code, so the verifier is execution-free.
 package builtins
 
 import "embed"
@@ -111,7 +147,7 @@ import "embed"
 // embed.FS paths are always slash-separated and rooted at this directory, so the
 // resolver sees "unused-import/species.toml", etc.
 //
-//go:embed unused-import dead-code unused-variable redundant-conversion unreachable-code empty-block duplicate-condition redundant-nil-check ineffective-assignment formatter-drift import-sort lint-autofix trailing-debug-code n+1-query missing-await nil-deref ai-slop ignored-error unchecked-type-assertion resource-leak missing-context-timeout unsafe-concurrency sql-string-concat deep-nesting long-function magic-number duplicate-code-small todo-expired unused-dependency dead-config duplicate-ci-step stale-dependency-pin hardcoded-secret insecure-random unsafe-temp-file pint-format php-cs-fixer laravel-dd-dump-debug laravel-env-call laravel-n+1-eager-load livewire-public-untyped-prop laravel-orphan-config-key laravel-mass-assignment laravel-raw-where-concat
+//go:embed unused-import dead-code unused-variable redundant-conversion unreachable-code empty-block duplicate-condition redundant-nil-check ineffective-assignment formatter-drift import-sort lint-autofix trailing-debug-code n+1-query missing-await nil-deref ai-slop ignored-error unchecked-type-assertion resource-leak missing-context-timeout unsafe-concurrency sql-string-concat deep-nesting long-function magic-number duplicate-code-small todo-expired unused-dependency dead-config duplicate-ci-step stale-dependency-pin hardcoded-secret insecure-random unsafe-temp-file pint-format php-cs-fixer laravel-dd-dump-debug laravel-env-call laravel-n+1-eager-load livewire-public-untyped-prop laravel-orphan-config-key laravel-mass-assignment laravel-raw-where-concat ruff-format ruff-autofix black-format isort-imports python-debug-print fastapi-sync-route-blocking fastapi-depends-default-arg python-bare-except python-sql-fstring fastapi-hardcoded-secret
 var files embed.FS
 
 // FS returns the embedded built-in species tree as a read-only fs.FS-compatible

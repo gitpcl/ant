@@ -100,6 +100,37 @@ var adr0002 = map[string]struct {
 	// concatenation in whereRaw/DB::raw -> bound parameters (SQLi).
 	"laravel-mass-assignment":  {FixKindLLM, false, true},
 	"laravel-raw-where-concat": {FixKindLLM, false, true},
+
+	// Sprint 024 P8 Python/FastAPI: the second non-Go-language family (languages=
+	// ["py"], the SAME token lint-autofix uses). Four tool-runner orchestration
+	// species (auto_apply=true, gated by formatter-idempotence): ruff-format and
+	// isort-imports ship ENABLED; black-format ships DISABLED (overlaps ruff-format);
+	// ruff-autofix adds a py_compile command:verify.sh alongside idempotence. One
+	// deterministic delete-match, propose-only: python-debug-print. Three llm-assisted,
+	// propose-only: fastapi-sync-route-blocking, fastapi-depends-default-arg,
+	// python-bare-except. None lists compile/tests:affected (vacuous Go-build pass on a
+	// non-Go repo); their proof is detector-clears / formatter-idempotence / a
+	// `python -m py_compile` command:verify.sh.
+	"ruff-format":                 {FixKindTool, true, true},
+	"ruff-autofix":                {FixKindTool, true, true},
+	"black-format":                {FixKindTool, true, false},
+	"isort-imports":               {FixKindTool, true, true},
+	"python-debug-print":          {FixKindDeterministic, false, true},
+	"fastapi-sync-route-blocking": {FixKindLLM, false, true},
+	"fastapi-depends-default-arg": {FixKindLLM, false, true},
+	"python-bare-except":          {FixKindLLM, false, true},
+
+	// Sprint 024 P8 Python/FastAPI SECURITY stage: two SECURITY-stage, propose-only
+	// (auto_apply=false) Python species authored by the security stage, gated by
+	// detector-clears + a `python -m py_compile` command:verify.sh (no
+	// compile/tests:affected — vacuous Go-build pass on a non-Go repo).
+	// python-sql-fstring: SQL built by an f-string interpolated into
+	// cur.execute()/text() -> a bound parameter. fastapi-hardcoded-secret: a string
+	// literal assigned to a credential-named target (SECRET_KEY/API_KEY/PASSWORD) ->
+	// os.environ[...]/os.getenv + a .env.example entry (multi-file llm fix). Both
+	// ship enabled.
+	"python-sql-fstring":       {FixKindLLM, false, true},
+	"fastapi-hardcoded-secret": {FixKindLLM, false, true},
 }
 
 // TestEmbed_BuiltinsDiscoverableNoDisk is the core feature-3 assertion: the

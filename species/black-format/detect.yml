@@ -1,0 +1,26 @@
+# Detector rule for the black-format species (tool-runner fix — Sprint 024 Python/
+# FastAPI wave; auto_apply, ships DISABLED). Templated on formatter-drift +
+# ruff-format.
+#
+# ORCHESTRATION species: the real work is done by `black`, which the tool-runner
+# execs, and the trust gate is formatter-idempotence. ast-grep is a SYNTACTIC
+# matcher (TECHSPEC §2) and cannot decide "would black change this file"; that is
+# black's job. The detector only NOMINATES a file as a drift candidate — it
+# matches a `function_definition` marked with a `# ant:black-format` doc comment,
+# the same marker convention the other orchestration species use.
+#
+# This species SHIPS DISABLED (species.toml enabled=false): it overlaps
+# ruff-format (`ruff format` is Black-compatible), so a project enables one or the
+# other. `compile`/`tests:affected` are NOT used — on a non-Go repo the Go-build
+# gate is a vacuous pass (sprint-024 contract); the genuine proof is
+# formatter-idempotence plus the species' RequiredTools=["python3","black"] CI
+# skip.
+id: black-format
+language: python
+severity: info
+message: 'File marked # ant:black-format is not in canonical black layout; reformatting'
+rule:
+  kind: function_definition
+  follows:
+    kind: comment
+    regex: 'ant:black-format'

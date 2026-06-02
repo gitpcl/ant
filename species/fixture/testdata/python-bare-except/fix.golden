@@ -1,0 +1,8 @@
+--- a/app/io.py
++++ b/app/io.py
+@@ -14,2 +14,4 @@
+-    except Exception:
+-        pass
++    except ValueError as e:
++        log(e)
++        raise

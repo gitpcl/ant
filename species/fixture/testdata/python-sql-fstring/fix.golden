@@ -1,0 +1,5 @@
+--- a/app/queries.py
++++ b/app/queries.py
+@@ -16,1 +16,1 @@
+-    cur.execute(f"SELECT name FROM users WHERE id = {user_id}")
++    cur.execute("SELECT name FROM users WHERE id = ?", (user_id,))

@@ -1,0 +1,32 @@
+name        = "fastapi-hardcoded-secret"
+description = "Detects a secret embedded as a string literal assigned to a credential-named target (`SECRET_KEY = \"...\"`, `API_KEY = \"...\"`, `PASSWORD = \"...\"`) in Python/FastAPI config; the fix removes the literal, reads it from the environment (`os.environ[...]` / `os.getenv(...)`), and records the variable in .env.example. security-stage, propose-only; see detect.yml + fix.md"
+severity    = "high"
+languages   = ["py"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# LLM-assisted, MULTI-FILE recorded fixer (templated on hardcoded-secret): removing
+# a secret is not a mechanical delete — the literal is replaced with an environment
+# read (`os.environ["VAR"]` / `os.getenv("VAR")`) AND the variable is recorded in
+# .env.example so the value is supplied at runtime. That cross-file rewrite is a
+# review judgement (the leaked value must also be ROTATED out of band), so the fix
+# is propose-only and always staged for a human.
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+# detector-clears re-runs THIS rule over the patched scratch tree and requires
+# zero matches (no string literal assigned to a credential-named target remains).
+# command:verify.sh runs `python -m py_compile` so a rewrite that broke the syntax
+# is skipped. `compile`/`tests:affected` are DELIBERATELY OMITTED: on a non-Go
+# repo the Go-build compile gate is a vacuous pass (sprint-024 contract). Real
+# proof = detector-clears + py_compile, gated by RequiredTools=["python3"] for the
+# CI skip. py_compile only byte-compiles — it never EXECUTES the (post-diff,
+# untrusted) repo code, so the verifier is itself execution-free.
+[verify]
+checks      = ["detector-clears", "command:verify.sh"]
+interpreter = "sh"

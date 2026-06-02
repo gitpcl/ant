@@ -1,0 +1,38 @@
+# Detector rule for the fastapi-depends-default-arg species (LLM-assisted,
+# propose-only — Sprint 024 Python/FastAPI wave). Templated on n+1-query.
+#
+# A MUTABLE default argument (`def handler(items = [])` / `def handler(opts = {})`)
+# is a classic Python footgun: the list/dict is created ONCE at function-definition
+# time and SHARED across every call, so state leaks between requests — especially
+# dangerous in a FastAPI handler or dependency where each call is a separate
+# request. The safe pattern is `= None` plus an in-body `items = items or []`, or,
+# for an injected dependency, a proper `Depends(...)` default rather than a bare
+# mutable literal.
+#
+# The rule matches a `default_parameter` whose `value` field is an empty list
+# `[]` or empty dict `{}` literal (the high-signal mutable-default smell). A
+# correctly-typed default (`x: int = 5`) and a proper `db = Depends(get_db)` are
+# intentionally NOT matched — only the shared-mutable case the sprint targets.
+# (The sprint's "Depends() outside a parameter default" variant is the rarer half;
+# this rule targets the deterministic, detector-clearing mutable-default smell,
+# which the fix removes cleanly.)
+#
+# Per ADR-0004 this is a CANDIDATE-tier detector: ast-grep nominates the mutable
+# default; the LLM fix rewrites it to the `= None` sentinel + in-body init;
+# detector-clears + a `python -m py_compile` command verifier confirm no mutable
+# default remains and the file still parses. compile/tests:affected are omitted
+# (vacuous Go-build pass on a non-Go repo, sprint-024 contract). severity
+# `warning` so `ast-grep scan` exits 0 on a match.
+id: fastapi-depends-default-arg
+language: python
+severity: warning
+message: 'Mutable default argument (= [] / = {}) is shared across calls; use = None plus an in-body initializer (or a proper Depends default)'
+rule:
+  kind: default_parameter
+  any:
+    - has:
+        field: value
+        regex: '^\[\s*\]$'
+    - has:
+        field: value
+        regex: '^\{\s*\}$'

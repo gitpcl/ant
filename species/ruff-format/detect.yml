@@ -1,0 +1,30 @@
+# Detector rule for the ruff-format species (tool-runner fix — Sprint 024 Python/
+# FastAPI wave; auto_apply). Templated on species/formatter-drift + pint-format.
+#
+# This is an ORCHESTRATION species: the real work is done by `ruff format` (the
+# Black-compatible Python formatter ruff ships), which the tool-runner execs, and
+# the trust gate is formatter-idempotence. ast-grep is a SYNTACTIC matcher
+# (TECHSPEC §2) and cannot itself decide "would ruff change this file"; that is
+# ruff's job. So the detector's role here is only to NOMINATE a file as a drift
+# candidate — it matches a `function_definition` the author (or an upstream pass)
+# marked with a `# ant:ruff-format` doc comment, the same marker convention the
+# Go orchestration species (formatter-drift, import-sort) and the PHP one
+# (pint-format) use.
+#
+# After the tool-runner reformats the whole file, formatter-idempotence re-runs
+# ruff and requires zero further changes (an oscillating formatter FAILS — a trust
+# signal). detector-clears is intentionally NOT used: a formatter normalizes
+# layout, it does not remove the marker the detector matched, so re-detect is the
+# wrong gate. `compile`/`tests:affected` are NOT used either — on a non-Go repo
+# the Go-build compile gate is a vacuous pass (sprint-024 contract); the genuine
+# proof is formatter-idempotence plus the species' RequiredTools=["python3","ruff"]
+# CI skip.
+id: ruff-format
+language: python
+severity: info
+message: 'File marked # ant:ruff-format is not in canonical ruff layout; reformatting'
+rule:
+  kind: function_definition
+  follows:
+    kind: comment
+    regex: 'ant:ruff-format'

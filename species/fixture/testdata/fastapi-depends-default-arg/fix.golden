@@ -1,0 +1,8 @@
+--- a/app/deps.py
++++ b/app/deps.py
+@@ -11,2 +11,3 @@
+-def list_items(tags = []):
+-    tags.append("default")
++def list_items(tags = None):
++    tags = tags if tags is not None else []
++    tags.append("default")

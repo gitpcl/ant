@@ -1,0 +1,42 @@
+# Detector rule for the python-debug-print species (deterministic delete-match,
+# propose-only — Sprint 024 Python/FastAPI wave). Templated on Go's
+# trailing-debug-code.
+#
+# print(), breakpoint(), and pdb.set_trace() are Python's ad-hoc debug helpers.
+# Left in source, print() pollutes stdout/logs and breakpoint()/pdb.set_trace()
+# halt execution in an interactive debugger — catastrophic in production. ast-grep
+# matches each SYNTACTICALLY as a statement-level call: the `context`/`selector`
+# pair pins the call to a function-body statement (a bare `print(...)` /
+# `breakpoint(...)` / `pdb.set_trace(...)` line), so the captured `lines` span is
+# the entire indented source line the delete-match fix removes. No marker comment
+# is needed — the call shape IS the smell.
+#
+# A print used as a SUB-EXPRESSION (`x = str(print)`, `log(print())`) is
+# intentionally NOT matched: the rule targets the standalone debug STATEMENT a
+# developer forgot to delete, the safe deterministic-removal case. The fix is
+# PROPOSE-ONLY (auto_apply=false): a print can be intentional (a CLI tool's
+# output), so removal is review-gated. detector-clears + a `python -m py_compile`
+# command verifier prove the removal is clean; compile/tests:affected are omitted
+# (vacuous Go-build pass on a non-Go repo, sprint-024 contract). severity
+# `warning` so `ast-grep scan` exits 0 on a match.
+id: python-debug-print
+language: python
+severity: warning
+message: 'Statement-level debug call (print/breakpoint/pdb.set_trace) left in source; remove it before shipping'
+rule:
+  any:
+    - pattern:
+        context: |
+          def _():
+              print($$$ARGS)
+        selector: call
+    - pattern:
+        context: |
+          def _():
+              breakpoint($$$ARGS)
+        selector: call
+    - pattern:
+        context: |
+          def _():
+              pdb.set_trace($$$ARGS)
+        selector: call

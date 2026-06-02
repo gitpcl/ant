@@ -1,0 +1,37 @@
+# Detector rule for the fastapi-sync-route-blocking species (LLM-assisted,
+# propose-only — Sprint 024 Python/FastAPI wave). Templated on missing-await.
+#
+# FastAPI runs a single asyncio event loop. A route handler declared `async def`
+# is awaited cooperatively; a route handler declared as a PLAIN `def` is run in a
+# threadpool by Starlette — which is fine for genuinely blocking I/O, but a plain
+# `def` that itself performs async-style or long CPU work, or that a developer
+# forgot to mark `async`, blocks a worker thread and starves throughput. The
+# common, high-signal smell is a plain `def` directly under an `@app.<method>` /
+# `@router.<method>` route decorator.
+#
+# The rule matches a `function_definition` (the tree-sitter node for BOTH sync and
+# async defs) that is `inside` a `decorated_definition` whose decorator is a
+# FastAPI route (`@app.get`, `@router.post`, … incl. websocket), and EXCLUDES the
+# async case with `not: { regex: '^async' }` (an `async def`'s matched text starts
+# with the `async` keyword; a sync def's does not). So an `async def read_items`
+# under `@app.get` is correctly NOT flagged, while a plain `def read_items` IS.
+#
+# Per ADR-0004 this is a CANDIDATE-tier detector: ast-grep nominates the sync
+# route; the LLM fix makes it `async def` (or offloads the blocking work);
+# detector-clears + a `python -m py_compile` command verifier confirm no plain def
+# remains under a route decorator and the file still parses. compile/tests:affected
+# are omitted (vacuous Go-build pass on a non-Go repo, sprint-024 contract).
+# severity `warning` so `ast-grep scan` exits 0 on a match.
+id: fastapi-sync-route-blocking
+language: python
+severity: warning
+message: 'Plain (non-async) def under a FastAPI route decorator can block the event loop; make it async or offload the blocking work'
+rule:
+  kind: function_definition
+  not:
+    regex: '^async'
+  inside:
+    kind: decorated_definition
+    has:
+      kind: decorator
+      regex: '@(app|router)\.(get|post|put|patch|delete|head|options|websocket)'

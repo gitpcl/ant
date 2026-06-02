@@ -1,0 +1,32 @@
+name        = "python-sql-fstring"
+description = "Detects a SQL statement built by an f-string interpolated into a DB call (`cur.execute(f\"... {value}\")`, `text(f\"... {value}\")`) — the SQL-injection smell; the interpolated value is parsed as SQL, not bound as data. The fix moves the value to a bound parameter (a placeholder + a params tuple/dict). security-stage, propose-only; see detect.yml"
+severity    = "high"
+languages   = ["py"]
+auto_apply  = false
+enabled     = true
+
+[detector]
+kind = "ast-grep"
+rule = "detect.yml"
+
+# LLM-assisted fix (templated on sql-string-concat / laravel-raw-where-concat):
+# move every interpolated value out of the SQL TEXT into a BOUND parameter — a
+# driver placeholder (`?` / `%s` / `:name`) in a plain (non-f) string literal plus
+# the value passed in the call's params argument (a tuple/list/dict). WHICH values
+# bind and the exact placeholder style are a review judgement on a security-
+# sensitive rewrite, so the parameterized form is ALWAYS staged for a human.
+[fix]
+kind   = "llm"
+prompt = "fix.md"
+
+# detector-clears re-runs THIS rule over the patched scratch tree and requires
+# zero matches (no execute/text call still has an f-string with an interpolation).
+# command:verify.sh runs `python -m py_compile` so a rewrite that broke the syntax
+# is skipped. `compile`/`tests:affected` are DELIBERATELY OMITTED: on a non-Go
+# repo the Go-build compile gate is a vacuous pass (sprint-024 contract). Real
+# proof = detector-clears + py_compile, gated by RequiredTools=["python3"] for the
+# CI skip. py_compile only byte-compiles — it never EXECUTES the (post-diff,
+# untrusted) repo code, so the verifier is itself execution-free.
+[verify]
+checks      = ["detector-clears", "command:verify.sh"]
+interpreter = "sh"

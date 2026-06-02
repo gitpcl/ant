@@ -1,0 +1,33 @@
+# Detector rule for the python-bare-except species (LLM-assisted, propose-only —
+# Sprint 024 Python/FastAPI wave). Templated on ignored-error.
+#
+# A bare `except:` catches EVERYTHING — including KeyboardInterrupt and
+# SystemExit — so Ctrl-C and process shutdown are silently swallowed, and any
+# genuine bug is hidden. An `except Exception: pass` is the same swallowing of
+# every ordinary error with no logging, no re-raise, no handling. Both turn a
+# failure into silent, undebuggable wrong behavior.
+#
+# The rule matches an `except_clause` node and discriminates with two regexes:
+#   - `^except\s*:`                              → a bare `except:` (any body)
+#   - `^except\s+Exception\s*:\s*(\n\s*)?pass\s*$` → `except Exception:` whose
+#                                                    entire body is `pass`
+# A NARROW, handled clause (`except ValueError as e: log(e)`) is intentionally NOT
+# matched — it names a specific exception and does something with it, the correct
+# pattern. So the rule flags only the two swallow-everything shapes the sprint
+# targets.
+#
+# Per ADR-0004 this is a CANDIDATE-tier detector: ast-grep nominates the broad
+# catch; the LLM fix narrows it to the specific exception and HANDLES it (log +
+# re-raise / typed return); detector-clears + a `python -m py_compile` command
+# verifier confirm no bare/swallowed except remains and the file still parses.
+# compile/tests:affected are omitted (vacuous Go-build pass on a non-Go repo,
+# sprint-024 contract). severity `warning` so `ast-grep scan` exits 0 on a match.
+id: python-bare-except
+language: python
+severity: warning
+message: 'Bare except: / except Exception: pass swallows every error (incl. KeyboardInterrupt); narrow the catch and handle it'
+rule:
+  kind: except_clause
+  any:
+    - regex: '^except\s*:'
+    - regex: '^except\s+Exception\s*:\s*(\n\s*)?pass\s*$'
