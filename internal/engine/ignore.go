@@ -33,6 +33,14 @@ func FilterIgnored(findings []Finding, ignoreGlobs []string) []Finding {
 // the forms the scaffolded ant.toml documents ([ignore].paths examples
 // "vendor/", "node_modules/", "*_generated.go"):
 //
+//   - A "**/SEGMENT/**" entry (the default-ignore form, e.g. "**/vendor/**")
+//     matches when SEGMENT appears as ANY path segment of the file. This is
+//     segment-anchored, NOT a prefix: it ignores noise dirs (vendor,
+//     node_modules, .git, testdata) wherever they NEST below the scan root, but
+//     because the file path is already relative-to-root (FilterIgnored runs on
+//     post-detection findings whose File is root-relative), scanning INTO such a
+//     dir — `ant scout ./x/testdata/foo` — yields files with NO "testdata"
+//     segment, so root-level findings are never wrongly suppressed.
 //   - A trailing-slash entry ("vendor/") is a directory prefix: any file at or
 //     under that directory is ignored.
 //   - A slash-free entry ("*_generated.go") matches the file's BASENAME anywhere
@@ -49,6 +57,13 @@ func PathIgnored(file string, ignoreGlobs []string) bool {
 	for _, raw := range ignoreGlobs {
 		g := normalizeSlash(strings.TrimSpace(raw))
 		if g == "" {
+			continue
+		}
+		if seg, ok := segmentGlob(g); ok {
+			// "**/SEGMENT/**": ignore when SEGMENT is any path segment of the file.
+			if hasPathSegment(clean, seg) {
+				return true
+			}
 			continue
 		}
 		if strings.HasSuffix(g, "/") {
@@ -73,6 +88,34 @@ func PathIgnored(file string, ignoreGlobs []string) bool {
 			return true
 		}
 		if clean == g || strings.HasPrefix(clean, g+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// segmentGlob recognizes the "**/SEGMENT/**" default-ignore form and returns the
+// bare SEGMENT. It accepts only a single, slash-free segment between the leading
+// "**/" and trailing "/**" (e.g. "**/vendor/**" → "vendor"); anything else is not
+// a segment glob and falls through to the existing matchers.
+func segmentGlob(g string) (string, bool) {
+	const prefix, suffix = "**/", "/**"
+	if !strings.HasPrefix(g, prefix) || !strings.HasSuffix(g, suffix) {
+		return "", false
+	}
+	seg := g[len(prefix) : len(g)-len(suffix)]
+	if seg == "" || strings.Contains(seg, "/") {
+		return "", false
+	}
+	return seg, true
+}
+
+// hasPathSegment reports whether seg is one of the slash-separated segments of
+// the forward-slash path clean. Matching whole segments (not substrings) means
+// "**/git/**" does not match a file literally named "digit.go".
+func hasPathSegment(clean, seg string) bool {
+	for _, part := range strings.Split(clean, "/") {
+		if part == seg {
 			return true
 		}
 	}

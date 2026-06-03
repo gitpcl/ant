@@ -38,6 +38,22 @@ const (
 	DefaultMaxChangedFiles = 10
 )
 
+// DefaultIgnoreGlobs are the noise directories scout/fix skip by default so a
+// zero-config run is not drowned in vendored, generated, or fixture findings.
+// They use the segment-anchored "**/SEGMENT/**" form (engine.PathIgnored): the
+// directory is ignored wherever it NESTS below the scan root, but scanning INTO
+// such a dir (e.g. `ant scout ./pkg/testdata/x`) still reports its findings,
+// because the post-detection finding File is root-relative and carries no such
+// segment. They are OVERRIDABLE: a user's [ignore].paths in ant.toml extends
+// them, and --no-default-ignore drops them entirely (see DefaultIgnoreGlobs use
+// in cmd/ant/scout.go).
+var DefaultIgnoreGlobs = []string{
+	"**/vendor/**",
+	"**/node_modules/**",
+	"**/.git/**",
+	"**/testdata/**",
+}
+
 // DefaultFixer is the built-in default fixer adapter (TECHSPEC §9 example).
 const DefaultFixer = "pi"
 

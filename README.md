@@ -29,8 +29,10 @@ A 30-second tour of the loop — `scout` → `fix` → `verify` → `review` —
 curl -fsSL https://raw.githubusercontent.com/gitpcl/ant/main/install.sh | sh
 
 # 1. Scout — detect and report, change nothing
-ant                      # bare `ant` == `ant scout` with a summary
-ant scout ./path --detail
+ant                      # severity-led digest: every high finding, medium/low folded to species counts
+ant scout ./path         # scout a subtree (noise dirs vendor/node_modules/.git/testdata ignored by default)
+ant scout --all          # list every finding (the full flat list) instead of the digest
+ant scout ./path --detail # add the code snippet to each finding
 
 # 2. Fix — produce verified diffs into a staging area (working tree untouched)
 ant fix

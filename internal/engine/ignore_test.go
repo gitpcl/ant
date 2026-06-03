@@ -54,3 +54,53 @@ func TestFilterIgnoredNoGlobs(t *testing.T) {
 		t.Fatalf("no globs must keep all findings, got %d", len(got))
 	}
 }
+
+// TestPathIgnoredSegmentGlob covers the "**/SEGMENT/**" default-ignore form: it
+// ignores a noise dir wherever it appears as a path SEGMENT, but a literal file
+// whose name merely contains the segment is NOT ignored, and the segment must be
+// a whole path element (not a substring).
+func TestPathIgnoredSegmentGlob(t *testing.T) {
+	globs := []string{"**/vendor/**", "**/node_modules/**", "**/.git/**", "**/testdata/**"}
+	cases := []struct {
+		file string
+		want bool
+	}{
+		{"vendor/x.go", true},                        // segment at root
+		{"internal/foo/vendor/bar.go", true},         // nested vendor
+		{"web/node_modules/pkg/index.js", true},      // nested node_modules
+		{"a/.git/HEAD", true},                        // nested .git
+		{"species/fixture/testdata/x/repo.go", true}, // nested testdata
+		{"src/app.go", false},                        // no noise segment
+		{"internal/vendored/app.go", false},          // substring, not a segment
+		{"cmd/testdata_helper.go", false},            // filename contains, not a segment
+		{"digit/main.go", false},                     // "digit" != ".git" segment
+	}
+	for _, c := range cases {
+		if got := PathIgnored(c.file, globs); got != c.want {
+			t.Errorf("PathIgnored(%q): got %v, want %v", c.file, got, c.want)
+		}
+	}
+}
+
+// TestSegmentGlobRootVsNested is the SUBTLE correctness point: the default
+// "**/testdata/**" must suppress testdata NESTED below the scan root but NEVER a
+// run that scans INTO a testdata dir. FilterIgnored matches on the root-RELATIVE
+// finding File: scanning `./pkg/testdata/foo` yields files like "bar.go" with no
+// "testdata" segment, so they survive, while a whole-repo scan's
+// "pkg/testdata/bar.go" is suppressed.
+func TestSegmentGlobRootVsNested(t *testing.T) {
+	globs := []string{"**/testdata/**"}
+
+	// Whole-repo scan: the finding File carries the testdata segment → suppressed.
+	nested := FilterIgnored([]Finding{{File: "pkg/testdata/bar.go"}}, globs)
+	if len(nested) != 0 {
+		t.Errorf("nested testdata must be suppressed, kept %+v", nested)
+	}
+
+	// Scan rooted INSIDE testdata: the File is relative to that root (no testdata
+	// segment) → must STILL be reported.
+	rooted := FilterIgnored([]Finding{{File: "bar.go"}, {File: "sub/baz.go"}}, globs)
+	if len(rooted) != 2 {
+		t.Errorf("scanning INTO testdata must still report findings, kept %+v", rooted)
+	}
+}

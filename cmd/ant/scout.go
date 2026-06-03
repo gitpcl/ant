@@ -19,7 +19,14 @@ func newScoutCmd() *cobra.Command {
 		Use:   "scout [path]",
 		Short: "Run detectors and report findings (mutates nothing)",
 		Long: "Scout runs the enabled species' detectors over the scope and reports " +
-			"findings. It never writes to the working tree.",
+			"findings. It never writes to the working tree.\n\n" +
+			"By default the human output is a severity-led DIGEST: every high finding " +
+			"in full, then medium/low folded to per-species counts. Use --all to list " +
+			"every finding one per line (the full flat list), and --detail to add the " +
+			"code snippet to each line.\n\n" +
+			"Noise directories (vendor, node_modules, .git, and nested testdata) are " +
+			"ignored by default; [ignore].paths in ant.toml extends that set, and " +
+			"--no-default-ignore drops the built-in defaults.",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runScout(cmd, args)
@@ -27,7 +34,9 @@ func newScoutCmd() *cobra.Command {
 	}
 	cmd.Flags().StringSlice("ant", nil, "limit the run to the named species (repeatable)")
 	cmd.Flags().String("severity", "", "only report findings at or above: low|medium|high")
-	cmd.Flags().Bool("detail", false, "verbose per-finding output")
+	cmd.Flags().Bool("detail", false, "verbose per-finding output (adds the code snippet)")
+	cmd.Flags().Bool("all", false, "list every finding (the full flat list) instead of the severity digest")
+	cmd.Flags().Bool("no-default-ignore", false, "do not skip the built-in noise dirs (vendor, node_modules, .git, testdata)")
 	return cmd
 }
 
@@ -80,10 +89,14 @@ func runScout(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Effective ignore globs = built-in noise-dir defaults (vendor, node_modules,
+	// .git, nested testdata) PLUS the user's [ignore].paths, unless
+	// --no-default-ignore drops the defaults. The defaults are segment-anchored
+	// so scanning INTO a noise-named dir still reports findings (engine.PathIgnored).
 	scope := engine.Scope{
 		Root:        path,
 		Species:     stringSlice(cmd, "ant"),
-		IgnoreGlobs: resolver.IgnorePaths(),
+		IgnoreGlobs: effectiveIgnoreGlobs(resolver.IgnorePaths(), boolFlag(cmd, "no-default-ignore")),
 	}
 
 	// Resolve the full species set through the SAME path `ant fix` uses
@@ -130,12 +143,29 @@ func runScout(cmd *cobra.Command, args []string) error {
 		AntFilter:      scope.Species,
 	}
 
-	result, err := scout.Drive(cmd.Context(), cmd.OutOrStdout(), format, boolFlag(cmd, "detail"), opts)
+	render := scout.RenderOptions{Detail: boolFlag(cmd, "detail"), All: boolFlag(cmd, "all")}
+	result, err := scout.Drive(cmd.Context(), cmd.OutOrStdout(), format, render, opts)
 	if err != nil {
 		return err // operational error → engine.ExitCode classifies it (exit 2)
 	}
 
 	return applyFailOn(failOn, result)
+}
+
+// effectiveIgnoreGlobs merges the built-in default-ignore globs with the user's
+// configured [ignore].paths. The defaults come first (so user globs extend, not
+// replace, them) and are skipped entirely when --no-default-ignore is set. The
+// result is a fresh slice — neither input is mutated (coding-style: immutability).
+func effectiveIgnoreGlobs(userGlobs []string, noDefaults bool) []string {
+	if noDefaults {
+		out := make([]string, len(userGlobs))
+		copy(out, userGlobs)
+		return out
+	}
+	out := make([]string, 0, len(config.DefaultIgnoreGlobs)+len(userGlobs))
+	out = append(out, config.DefaultIgnoreGlobs...)
+	out = append(out, userGlobs...)
+	return out
 }
 
 // applyFailOn implements the --fail-on CI gate (TECHSPEC §7.1): if the highest

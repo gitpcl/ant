@@ -3,33 +3,88 @@ package events
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/gitpcl/ant/internal/engine"
 )
 
+// HumanOptions toggles the human renderer. Detail adds the per-finding code
+// snippet (scout --detail). All lists every finding one per line — the full flat
+// list (scout --all) — instead of the default severity-led DIGEST. They compose:
+// All+Detail is the flat list with snippets.
+type HumanOptions struct {
+	Detail bool
+	All    bool
+}
+
 // RenderHuman drains a subscription and writes a plain-text rendering of the
 // same event stream RenderJSON consumes — the human and --json outputs are one
-// run rendered two ways (TECHSPEC §3, §11). detail toggles per-finding verbosity
-// (the scout --detail flag). The function returns when the subscription channel
-// closes.
+// run rendered two ways (TECHSPEC §3, §11). The function returns when the
+// subscription channel closes.
+//
+// Scout's findings are BUFFERED (not streamed) so run.end can emit a
+// severity-led digest: the high findings in full, medium/low folded to per-
+// species counts (PRD UX fix — a flat 1268-line dump is "hard to digest").
+// --all (opts.All) restores the full one-per-line flat list. The fix path is
+// unaffected: ant.verified / ant.skipped are TRUST SIGNALS and still stream LIVE
+// as they arrive (a fix run emits no bare finding list to buffer), so a fix run's
+// human output is byte-for-byte unchanged.
 //
 // Rendering lives in the engine, not cmd/ant, because the CLI boundary forbids
 // hand-rolled output formatting that should derive from the single-source-of-
 // truth event bus. cmd/ant only chooses which renderer to attach.
-func RenderHuman(w io.Writer, sub *Subscription, detail bool) error {
+func RenderHuman(w io.Writer, sub *Subscription, opts HumanOptions) error {
+	var findings []engine.Finding
+	// root is captured from run.start so the digest header shows the ACTUAL scanned
+	// path. It is kept purely in this renderer's buffered state — NOT on
+	// RunEndPayload — so the --json wire contract (scout-json.golden) stays
+	// byte-identical (threat-model fix: a hardcoded "." misreported subtree scans).
+	root := "."
 	for ev := range sub.C {
-		if err := renderHumanEvent(w, ev, detail); err != nil {
-			return err
+		switch ev.Type {
+		case TypeDetectFinding:
+			// Buffer findings; the digest (or the --all flat list) is emitted at
+			// run.end. This is scout-only — scout emits findings + run.end, so
+			// buffering changes no live trust signal.
+			if ev.DetectFinding != nil {
+				findings = append(findings, ev.DetectFinding.Finding)
+			}
+		case TypeRunEnd:
+			if ev.RunEnd == nil {
+				continue
+			}
+			if err := renderScoutClose(w, findings, *ev.RunEnd, root, opts); err != nil {
+				return err
+			}
+		case TypeRunStart:
+			// Capture the scanned root for the digest header before deciding whether
+			// to print the streaming banner.
+			if ev.RunStart != nil && ev.RunStart.Scope.Root != "" {
+				root = ev.RunStart.Scope.Root
+			}
+			// In digest mode the digest header ("ant scout · scanned …") replaces the
+			// "scanning <root>" banner, so suppress it; --all keeps the banner so its
+			// flat-list output is unchanged from the pre-digest behavior.
+			if opts.All {
+				if err := renderStreamingEvent(w, ev); err != nil {
+					return err
+				}
+			}
+		default:
+			// ant.verified, ant.skipped, etc. stream live, unchanged.
+			if err := renderStreamingEvent(w, ev); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-// renderHumanEvent renders a single event. Findings are listed as they arrive;
-// run.end prints the summary line and the explicit "nothing was modified"
-// statement that the bare-`ant` / scout UX requires (PRD §6.1, ADR 0001).
-func renderHumanEvent(w io.Writer, ev Event, detail bool) error {
+// renderStreamingEvent renders the events that are NOT buffered: the live trust
+// signals of a fix run (ant.verified / ant.skipped) and the run banner. These
+// keep their original arrival-ordered behavior so a fix run's output is unchanged.
+func renderStreamingEvent(w io.Writer, ev Event) error {
 	switch ev.Type {
 	case TypeRunStart:
 		if ev.RunStart == nil {
@@ -42,12 +97,6 @@ func renderHumanEvent(w io.Writer, ev Event, detail bool) error {
 		_, err := fmt.Fprintf(w, "ant scout: scanning %s\n", root)
 		return err
 
-	case TypeDetectFinding:
-		if ev.DetectFinding == nil {
-			return nil
-		}
-		return renderFinding(w, ev.DetectFinding.Finding, detail)
-
 	case TypeAntVerified:
 		if ev.AntVerified == nil {
 			return nil
@@ -59,14 +108,37 @@ func renderHumanEvent(w io.Writer, ev Event, detail bool) error {
 			return nil
 		}
 		return renderSkipped(w, *ev.AntSkipped)
-
-	case TypeRunEnd:
-		if ev.RunEnd == nil {
-			return nil
-		}
-		return renderSummary(w, *ev.RunEnd)
 	}
 	return nil
+}
+
+// renderScoutClose renders the end of a scout run from the BUFFERED findings: the
+// severity-led digest by default, or — with opts.All — the full flat one-per-line
+// list followed by the summary. An aborted or zero-finding run defers to the
+// existing renderSummary path unchanged.
+func renderScoutClose(w io.Writer, findings []engine.Finding, end RunEndPayload, root string, opts HumanOptions) error {
+	if end.Error != "" || len(findings) == 0 {
+		// Aborted run (renderSummary prints nothing) or clean run (No findings. /
+		// Nothing was modified.) — both keep the existing behavior exactly.
+		return renderSummary(w, end)
+	}
+	if opts.All {
+		return renderFlatList(w, findings, end, opts.Detail)
+	}
+	return renderDigest(w, findings, root, end)
+}
+
+// renderFlatList restores the pre-digest behavior: every finding, one per line,
+// sorted high→low severity for ordering (every line preserved), then the summary.
+// --detail still composes (adds the snippet). This is `ant scout --all`.
+func renderFlatList(w io.Writer, findings []engine.Finding, end RunEndPayload, detail bool) error {
+	sorted := sortedBySeverity(findings)
+	for _, f := range sorted {
+		if err := renderFinding(w, f, detail); err != nil {
+			return err
+		}
+	}
+	return renderSummary(w, end)
 }
 
 // renderFinding prints one finding. The compact form is a single line; --detail
@@ -90,6 +162,188 @@ func renderFinding(w io.Writer, f engine.Finding, detail bool) error {
 		return err
 	}
 	return nil
+}
+
+// maxDigestSpecies caps how many medium/low species the digest lists before it
+// collapses the remainder into a "+ K more species" line, keeping the digest
+// scannable (PRD UX fix). High findings are NEVER capped — they are always listed
+// in full.
+const maxDigestSpecies = 8
+
+// renderDigest writes the severity-led DIGEST: a header with the per-severity
+// breakdown, every HIGH finding in full (sorted by path for stability), the
+// medium/low findings folded to per-species counts (sorted by count desc, species
+// asc), then the action footer and the mandatory "Nothing was modified." line
+// (PRD §6.1). It is scout-specific — the finding dump rendered digestibly.
+//
+// SECURITY: every piece of finding text rendered here (Species, File, Message)
+// is passed through sanitizeControl, preserving the Sprint-020 terminal-escape-
+// injection defense for the new digest surface — a command detector's output is
+// script-controlled.
+func renderDigest(w io.Writer, findings []engine.Finding, root string, end RunEndPayload) error {
+	high, medLow := partitionBySeverity(findings)
+
+	// Header: "ant scout · scanned <root> · <N> findings". root is captured from the
+	// run.start event (buffered in RenderHuman), so a subtree scan reports the real
+	// path; it falls back to "." when unset. It is NOT carried on RunEndPayload, so
+	// the --json wire contract stays byte-identical.
+	if root == "" {
+		root = "."
+	}
+	if _, err := fmt.Fprintf(w, "ant scout · scanned %s · %d findings\n\n", sanitizeControl(root), len(findings)); err != nil {
+		return err
+	}
+
+	// Per-severity breakdown; omit a tier with 0.
+	counts := severityCounts(findings)
+	for _, tier := range []struct {
+		name  string
+		sev   engine.Severity
+		extra string
+	}{
+		{"high", engine.SeverityHigh, "   ← act on these first"},
+		{"medium", engine.SeverityMedium, ""},
+		{"low", engine.SeverityLow, ""},
+	} {
+		n := counts[tier.sev]
+		if n == 0 {
+			continue
+		}
+		if _, err := fmt.Fprintf(w, "  %-8s %d%s\n", tier.name, n, tier.extra); err != nil {
+			return err
+		}
+	}
+
+	// HIGH block: every high finding in full, sorted by file path for stability.
+	if len(high) > 0 {
+		if _, err := fmt.Fprintf(w, "\nHIGH (%d)\n", len(high)); err != nil {
+			return err
+		}
+		sort.SliceStable(high, func(i, j int) bool {
+			if high[i].File != high[j].File {
+				return high[i].File < high[j].File
+			}
+			return high[i].Span.StartLine < high[j].Span.StartLine
+		})
+		for _, f := range high {
+			loc := fmt.Sprintf("%s:%d", sanitizeControl(displayPath(f.File)), f.Span.StartLine)
+			if _, err := fmt.Fprintf(w, "  %-36s %s\n", loc, sanitizeControl(f.Species)); err != nil {
+				return err
+			}
+		}
+	}
+
+	// TOP SPECIES block: medium/low folded to per-species counts.
+	if len(medLow) > 0 {
+		if _, err := fmt.Fprintf(w, "\nTOP SPECIES (medium / low)\n"); err != nil {
+			return err
+		}
+		if err := renderSpeciesCounts(w, medLow); err != nil {
+			return err
+		}
+	}
+
+	// Footer: the --all hint (only when medium/low were folded away), the fix hint,
+	// and the mandatory read-only statement.
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if len(medLow) > 0 {
+		if _, err := fmt.Fprintf(w, "→ ant scout --all   list every finding\n"); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(w, "→ ant fix           propose fixes\n"); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintln(w, "Nothing was modified.")
+	return err
+}
+
+// renderSpeciesCounts writes the per-species tallies for the medium/low set,
+// sorted by count descending then species name ascending, capped at
+// maxDigestSpecies with a "+ K more species" remainder line.
+func renderSpeciesCounts(w io.Writer, findings []engine.Finding) error {
+	type bucket struct {
+		species string
+		count   int
+	}
+	byName := map[string]int{}
+	for _, f := range findings {
+		byName[f.Species]++
+	}
+	buckets := make([]bucket, 0, len(byName))
+	for s, c := range byName {
+		buckets = append(buckets, bucket{species: s, count: c})
+	}
+	sort.SliceStable(buckets, func(i, j int) bool {
+		if buckets[i].count != buckets[j].count {
+			return buckets[i].count > buckets[j].count
+		}
+		return buckets[i].species < buckets[j].species
+	})
+
+	shown := buckets
+	if len(buckets) > maxDigestSpecies {
+		shown = buckets[:maxDigestSpecies]
+	}
+	for _, b := range shown {
+		if _, err := fmt.Fprintf(w, "  %-24s %d\n", sanitizeControl(b.species), b.count); err != nil {
+			return err
+		}
+	}
+	if rest := len(buckets) - len(shown); rest > 0 {
+		if _, err := fmt.Fprintf(w, "  + %d more species\n", rest); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// displayPath trims a leading "./" so a finding's File renders as "internal/x.go"
+// rather than "./internal/x.go" in the digest, matching the target UX format.
+func displayPath(p string) string {
+	return strings.TrimPrefix(p, "./")
+}
+
+// partitionBySeverity splits findings into the high set and the medium/low set
+// (everything not high — medium, low, and any unknown). The inputs are not
+// mutated; two fresh slices are returned.
+func partitionBySeverity(findings []engine.Finding) (high, medLow []engine.Finding) {
+	for _, f := range findings {
+		if f.Severity == engine.SeverityHigh {
+			high = append(high, f)
+		} else {
+			medLow = append(medLow, f)
+		}
+	}
+	return high, medLow
+}
+
+// severityCounts tallies findings per severity for the breakdown header.
+func severityCounts(findings []engine.Finding) map[engine.Severity]int {
+	counts := map[engine.Severity]int{}
+	for _, f := range findings {
+		counts[f.Severity]++
+	}
+	return counts
+}
+
+// sortedBySeverity returns a new slice ordered high→low severity, then by file
+// path and line for stable ordering within a tier. The input is not mutated.
+func sortedBySeverity(findings []engine.Finding) []engine.Finding {
+	out := make([]engine.Finding, len(findings))
+	copy(out, findings)
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Severity != out[j].Severity {
+			return out[i].Severity > out[j].Severity
+		}
+		if out[i].File != out[j].File {
+			return out[i].File < out[j].File
+		}
+		return out[i].Span.StartLine < out[j].Span.StartLine
+	})
+	return out
 }
 
 // sanitizeControl strips non-printable control characters from a string before it

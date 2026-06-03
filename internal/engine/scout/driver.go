@@ -18,6 +18,16 @@ const (
 	FormatJSON
 )
 
+// RenderOptions carries the human-renderer toggles the CLI flags select. Detail
+// adds the per-finding code snippet; All lists every finding (the full flat
+// list) instead of the default severity-led digest. They compose: --all --detail
+// is the full flat list with snippets. Neither affects --json (the byte contract
+// is rendered by RenderJSON, untouched).
+type RenderOptions struct {
+	Detail bool
+	All    bool
+}
+
 // Drive is the scout entry point the CLI calls: it owns the event bus, the
 // renderer goroutine, and the scout run, so cmd/ant stays a pure caller with no
 // concurrency or rendering machinery of its own (the boundary test forbids
@@ -27,7 +37,7 @@ const (
 //
 // Returns the Result (for the caller's exit-code decision) and the first error
 // from either scouting (operational, exit 2) or rendering.
-func Drive(ctx context.Context, w io.Writer, format OutputFormat, detail bool, opts Options) (Result, error) {
+func Drive(ctx context.Context, w io.Writer, format OutputFormat, render RenderOptions, opts Options) (Result, error) {
 	bus := events.NewBus()
 	sub := bus.Subscribe()
 
@@ -37,7 +47,7 @@ func Drive(ctx context.Context, w io.Writer, format OutputFormat, detail bool, o
 		case FormatJSON:
 			renderErr <- events.RenderJSON(w, sub)
 		default:
-			renderErr <- events.RenderHuman(w, sub, detail)
+			renderErr <- events.RenderHuman(w, sub, events.HumanOptions{Detail: render.Detail, All: render.All})
 		}
 	}()
 
