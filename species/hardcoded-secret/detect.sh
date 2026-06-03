@@ -101,6 +101,20 @@ emit() {
 			if (line !~ /(^|[^A-Za-z0-9_])((const|var)[ \t]+)?[A-Za-z0-9_]*([Kk]ey|[Tt]oken|[Ss]ecret|[Pp]assword|[Pp]asswd|[Aa]pi[Kk]ey|APIKey|APIKEY)[A-Za-z0-9_]*[ \t]*:?=[ \t]*"/) next
 			if (length(val) < 20) next
 			if (entropy(val) < 3.5) next
+			# Rule 2 EXCLUSIONS — value shapes that clear the entropy/length gate
+			# (a dotted path and an UPPER_SNAKE token both carry ~3.7 bits/char) but
+			# are DEFINITIONALLY-NOT-SECRETS. The identifier name (apiKey/Key...) is
+			# not enough; the value shape is the discriminator. Rule 1 (known token
+			# shapes) is unaffected — it already fired and `next`-ed above, so an
+			# AKIA/ghp_/xoxb/PEM is caught regardless of these shapes.
+			#   - Env-var NAME: a pure all-uppercase SNAKE_CASE identifier
+			#     (e.g. "ANT_RAWMODEL_API_KEY") — the reference-the-env-var pattern,
+			#     the OPPOSITE of a leaked value. Real credentials are never pure
+			#     UPPER_SNAKE.
+			if (val ~ /^[A-Z][A-Z0-9_]*$/) next
+			#   - Config-key PATH: a lowercase dot/underscore-segmented key path
+			#     (e.g. "verify.max_changed_lines") — a viper config key, not a value.
+			if (val ~ /^[a-z][a-z0-9_]*([._][a-z0-9_]+)+$/) next
 			flag(file, FNR, line, "likely hardcoded secret assigned to a credential-named variable (high-entropy literal) — move it to an environment variable and rotate the value")
 		}
 		END { if (!started) printf "[" ; printf "]\n" }

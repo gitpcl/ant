@@ -1396,6 +1396,32 @@ func TestDuplicateCIStepReportOnly(t *testing.T) {
 	}, 1)
 }
 
+// TestHardcodedSecretValueShapeDiscrimination is the Rule 2 value-shape
+// EXCLUSION regression guard (dogfooding finding: ant scout on Ant's own tree
+// produced FALSE POSITIVES on config-key constants and an env-var-name const).
+// The detect-only fixture carries three credential-NAMED assignments that all
+// clear the length(>=20)+entropy(>=3.5) gate, so discrimination happens at the
+// value-shape exclusions, not the gate:
+//   - envname.go: an UPPER_SNAKE env-var NAME ("ANT_RAWMODEL_API_KEY") on an
+//     `apiKey` const — excluded by `^[A-Z][A-Z0-9_]*$`, MUST NOT flag.
+//   - configkey.go: a lowercase dotted config-key PATH
+//     ("verify.max_changed_lines") on a `KeyVerify...` const — excluded by
+//     `^[a-z][a-z0-9_]*([._][a-z0-9_]+)+$`, MUST NOT flag.
+//   - realsecret.go: a genuine mixed-case high-entropy random literal on an
+//     `apiKey` var — matches NEITHER exclusion, MUST flag (no false negative).
+//
+// Expecting exactly 1 finding proves both the exclusions (the two non-secrets
+// are silent) AND that the discriminator did not over-fire (the real secret on a
+// similarly-named var still fires). One finding per file keeps detector-clears
+// honest. Pure-POSIX (sh+awk+find), so no RequiredTools — the case never skips.
+func TestHardcodedSecretValueShapeDiscrimination(t *testing.T) {
+	fixture.RunDetectOnlyCase(t, fixture.Case{
+		Name:       "hardcoded-secret-discriminate",
+		SpeciesDir: filepath.Join(speciesRoot, "hardcoded-secret"),
+		RepoDir:    filepath.Join("testdata", "hardcoded-secret-discriminate", "repo"),
+	}, 1)
+}
+
 // TestReportOnlyFixtureSpecies proves the first-class report-only manifest kind
 // (Sprint 022 Finding 4, fix.kind=none): a dedicated fixture species declared with
 // NO [fix].transform and NO [verify].checks LOADS and VALIDATES through the real

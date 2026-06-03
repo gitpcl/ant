@@ -64,6 +64,11 @@ hits="$(awk '
 		if (line !~ /(^|[^A-Za-z0-9_])((const|var)[ \t]+)?[A-Za-z0-9_]*([Kk]ey|[Tt]oken|[Ss]ecret|[Pp]assword|[Pp]asswd|[Aa]pi[Kk]ey|APIKey|APIKEY)[A-Za-z0-9_]*[ \t]*:?=[ \t]*"/) next
 		if (length(val) < 20) next
 		if (entropy(val) < 3.5) next
+		# Rule 2 EXCLUSIONS — MUST mirror detect.sh byte-for-byte (env-var NAME and
+		# config-key PATH value shapes are definitionally-not-secrets; Rule 1 known
+		# token shapes already fired above and are unaffected).
+		if (val ~ /^[A-Z][A-Z0-9_]*$/) next
+		if (val ~ /^[a-z][a-z0-9_]*([._][a-z0-9_]+)+$/) next
 		print file ":" FNR ": " line
 	}
 ' "$@")"
