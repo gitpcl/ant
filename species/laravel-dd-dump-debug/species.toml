@@ -16,12 +16,13 @@ kind      = "deterministic"
 transform = "delete-match"
 
 # detector-clears re-runs THIS rule over the patched scratch tree and requires
-# zero matches (the dd/dump/ray statement is gone). command:verify.sh runs
-# `php -l` over the changed PHP so a removal that left a syntax error is skipped.
-# `compile`/`tests:affected` are DELIBERATELY OMITTED: on a non-Go repo the
-# hardcoded `go build ./...` compile gate is a vacuous pass (sprint-023 contract),
-# so it would prove nothing. The genuine proof is detector-clears + the php -l
-# parse gate, gated by RequiredTools=["php"] for the CI skip.
+# zero matches (the dd/dump/ray statement is gone). `compile` is now the genuine
+# PHP parse gate: Sprint 026 made the built-in compile verifier per-language, so
+# for a `languages = ["php"]` species it runs `php -l` over the changed PHP in the
+# scratch tree (replacing the bespoke command:verify.sh this species carried as a
+# workaround for the old vacuous Go-build compile check). A removal that left a
+# syntax error makes php -l exit non-zero and the fix is skipped; php absent is an
+# honest, clean SKIP (CI without php stays green), not a failure — so the
+# command:verify.sh + RequiredTools=["php"] dance is no longer needed.
 [verify]
-checks      = ["detector-clears", "command:verify.sh"]
-interpreter = "sh"
+checks = ["detector-clears", "compile"]

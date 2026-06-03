@@ -1,0 +1,13 @@
+--- a/repo.go
++++ b/repo.go
+@@ -7,5 +7,5 @@
+-	if n < 0 {
+-		return "neg"
+-	} else {
+-		return "pos"
+-	}
++if n < 0 {
++	
++	return "neg"
++}
++return "pos"

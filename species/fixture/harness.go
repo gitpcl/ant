@@ -31,6 +31,7 @@ import (
 	"github.com/gitpcl/ant/internal/engine"
 	"github.com/gitpcl/ant/internal/engine/detect"
 	"github.com/gitpcl/ant/internal/engine/fix"
+	"github.com/gitpcl/ant/internal/engine/langmap"
 	"github.com/gitpcl/ant/internal/engine/species"
 	"github.com/gitpcl/ant/internal/engine/verify"
 )
@@ -499,9 +500,13 @@ func buildFixTask(f engine.Finding) engine.FixTask {
 	return engine.FixTask{
 		Finding: f,
 		Context: engine.CodeContext{
-			File:    f.File,
-			Span:    f.Span,
-			Snippet: f.Snippet,
+			File: f.File,
+			// Mirror colony.buildFixTask: resolve the language from the file via the
+			// single langmap authority so the fixture's FixTask matches a live run's
+			// (Sprint 026).
+			Language: langmap.LanguageForPath(f.File),
+			Span:     f.Span,
+			Snippet:  f.Snippet,
 			// Mirror colony.buildFixTask: carry the verbatim source line(s) and any
 			// ast-grep rewrite suggestion so the deterministic fixer's indented
 			// delete-match and rewrite transforms patch lines that byte-match the

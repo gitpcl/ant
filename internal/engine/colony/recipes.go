@@ -181,7 +181,7 @@ func ScoutDetectors(decisions []species.TrustDecision, rulesRoot string) []engin
 				Detector: commandDetectorFor(m, d, rulesRoot, detect.WithScanSafe(true)),
 			})
 		default: // ast-grep is the default ("" or "ast-grep")
-			out = append(out, engine.NamedDetector{Species: m.Name, Detector: detect.NewASTGrep(m.Name, rulesFile(rulesRoot, m.Name, d.Rule))})
+			out = append(out, engine.NamedDetector{Species: m.Name, Detector: detect.NewASTGrep(m.Name, rulesFile(rulesRoot, m.Name, d.Rule), detect.WithLanguages(m.Languages))})
 		}
 	}
 	return out
@@ -233,7 +233,9 @@ func buildDetector(m species.Manifest, rulesRoot string, commandExec bool) (engi
 	}
 	switch d.Kind {
 	case species.DetectKindASTGrep, "":
-		return detect.NewASTGrep(m.Name, rulesFile(rulesRoot, m.Name, d.Rule)), nil
+		// Scope ast-grep to the species' declared languages (Sprint 026) so it skips
+		// unrelated trees (vendor/, node_modules/). Empty Languages = unscoped.
+		return detect.NewASTGrep(m.Name, rulesFile(rulesRoot, m.Name, d.Rule), detect.WithLanguages(m.Languages)), nil
 	case species.DetectKindCommand:
 		if !commandExec {
 			// SECURITY: refuse to run an untrusted species' detector script.
@@ -374,14 +376,29 @@ func verifierBuilder(m species.Manifest, det engine.Detector, rulesRoot string, 
 		for _, c := range checks {
 			switch c {
 			case "compile":
-				rest = append(rest, verify.NewCompile(nil)) // nil → real `go build`
+				// Per-language compile dispatch (Sprint 026): a Go diff runs `go
+				// build`, a PHP diff `php -l`, a TS diff `tsc --noEmit`, etc.; a diff
+				// in a language with NO registered builder is an honest skip-with-
+				// reason, never the old vacuous `go build` pass on a non-Go repo.
+				rest = append(rest, verify.NewCompileDefault())
 			case "detector-clears":
 				rest = append(rest, verify.NewDetectorClears(det, f))
 			case verify.CheckTestsAffected:
-				// Smart test selection: coverage-map → import-graph → package
-				// fallback, sharing the colony-wide coverage cache; runs ONLY the
-				// affected tests and reports the strategy used (TECHSPEC §5.3.1).
-				rest = append(rest, verify.NewTestsAffected(verify.AffectedConfig{Cache: coverCache}))
+				// Per-language smart test selection (Sprint 026): Go uses
+				// coverage-map → import-graph → package-fallback (sharing the
+				// colony-wide coverage cache); ts/js/py/php use a co-located selector
+				// + their CLI runner (vitest/pytest/phpunit). Runs ONLY the affected
+				// tests, reports the strategy, and is an honest skip for a language
+				// with no runner — never a vacuous pass (TECHSPEC §5.3.1).
+				//
+				// SECURITY (Sprint 026 audit): a test runner executes repo-controlled
+				// code (conftest.py/vitest.config.ts/phpunit bootstrap/_test.go) — the
+				// SAME exec surface a command: verifier is gated on. ExecAllowed reuses
+				// the SINGLE trust authority (commandExec = species.ScriptExecAllowed):
+				// a vetted built-in or reviewed species runs the tests; an untrusted/
+				// never-reviewed user species is held to an honest skip and runs NO repo
+				// code, mirroring the command: blockedVerifier above.
+				rest = append(rest, verify.NewTestsAffected(verify.AffectedConfig{Cache: coverCache, ExecAllowed: commandExec}))
 			case verify.CheckFormatterIdempotence:
 				// Re-run the manifest-declared formatter over the post-fix tree and
 				// assert no further changes (Sprint 017). The tool is declared in

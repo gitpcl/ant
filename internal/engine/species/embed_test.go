@@ -21,6 +21,7 @@ var adr0002 = map[string]struct {
 	"unused-variable":          {FixKindDeterministic, true, true},
 	"redundant-conversion":     {FixKindDeterministic, true, true},
 	"unreachable-code":         {FixKindDeterministic, true, true},
+	"redundant-else":           {FixKindDeterministic, true, true},
 	"empty-block":              {FixKindDeterministic, false, true},
 	"duplicate-condition":      {FixKindDeterministic, false, true},
 	"redundant-nil-check":      {FixKindDeterministic, false, true},

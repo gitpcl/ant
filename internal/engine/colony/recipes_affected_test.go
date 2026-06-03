@@ -30,6 +30,11 @@ func TestBuildRecipesWiresTestsAffected(t *testing.T) {
 			EffectiveAutoApply: false,
 		},
 		EffectiveAutoApply: false,
+		// Trusted to execute repo test code: tests:affected runs _test.go (repo-
+		// controlled), so the Sprint-026 exec gate (ScriptExecAllowed) must be true
+		// for this wired-and-runs assertion — a vetted built-in species, which is
+		// how an n+1-query species ships.
+		ScriptExecAllowed: true,
 	}}
 
 	recipes, _, err := BuildRecipes(decisions, nil, "", RecipeConfig{Limits: verify.DefaultLimits()})
@@ -41,13 +46,18 @@ func TestBuildRecipesWiresTestsAffected(t *testing.T) {
 		t.Fatal("expected a recipe for n+1-query")
 	}
 
-	gate := recipe.NewVerifier(engine.Finding{Species: "n+1-query", File: "README.md"})
+	// Use a Go file change so the wired tests:affected verifier dispatches to the
+	// Go selectors and reports a strategy (Sprint 026 made tests:affected
+	// per-language: a README/unknown-language change is now an honest skip, which
+	// would not exercise the strategy-reporting path this test asserts).
+	gate := recipe.NewVerifier(engine.Finding{Species: "n+1-query", File: "internal/x/x.go"})
 
-	// A README-only diff touches no Go package, so tests:affected degrades to
-	// "no affected tests" (an honest pass) — and the gate output must NAME the
-	// tests:affected check, proving it is wired into the chain.
+	// A Go-file diff with no co-located test package degrades to the Go
+	// package-fallback strategy — an honest pass — and the gate output must NAME
+	// the tests:affected check AND report a strategy, proving it is wired into the
+	// chain with the per-language Go dispatch intact.
 	diff := engine.ProposedDiff{
-		Files: []engine.FileDiff{{Path: "README.md", Patch: "--- a/README.md\n+++ b/README.md\n@@ -1,0 +1,1 @@\n+a new line\n"}},
+		Files: []engine.FileDiff{{Path: "internal/x/x.go", Patch: "--- a/internal/x/x.go\n+++ b/internal/x/x.go\n@@ -1,0 +1,1 @@\n+// a new line\n"}},
 		Fixer: "test",
 	}
 	res := gate.Verify(context.Background(), diff, engine.Scope{Root: t.TempDir()})

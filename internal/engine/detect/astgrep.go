@@ -12,8 +12,10 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"sort"
 
 	"github.com/gitpcl/ant/internal/engine"
+	"github.com/gitpcl/ant/internal/engine/langmap"
 )
 
 // defaultASTGrepBinary is the executable the adapter shells out to. ast-grep is
@@ -31,6 +33,14 @@ type astgrepDetector struct {
 	binary  string // executable name or path; defaults to "ast-grep"
 	species string // species that owns the findings this detector produces
 	rule    string // path to the ast-grep rule file (detect.yml)
+
+	// globs are ast-grep `--globs` INCLUDE patterns scoping the scan to the
+	// species' declared languages (Sprint 026). Derived from manifest.Languages
+	// via the single langmap authority, so a `languages = ["php"]` species scans
+	// only *.php and ast-grep never walks unrelated trees (vendor/, node_modules/)
+	// it would otherwise descend into. Empty = scan everything (the prior
+	// behavior — a species with no declared languages is unscoped).
+	globs []string
 
 	// runner executes the command and returns combined behavior; injectable so
 	// tests exercise the parse path with a recorded payload and the
@@ -79,6 +89,32 @@ func withRunner(r commandRunner) Option {
 	}
 }
 
+// WithLanguages scopes the scan to a species' declared languages (Sprint 026).
+// Each language is mapped to its file extensions via the single langmap
+// authority and turned into an ast-grep `--globs` include pattern (e.g. php →
+// "**/*.php"), so ast-grep walks only files of those languages and skips
+// unrelated trees (vendor/, node_modules/) entirely — a correctness and
+// performance fix for multi-stack repos. An empty/unknown language list leaves
+// the scan UNSCOPED (the prior behavior), so Go species and any species without a
+// `languages` field are unchanged.
+func WithLanguages(languages []string) Option {
+	return func(d *astgrepDetector) {
+		var globs []string
+		seen := make(map[string]bool)
+		for _, lang := range languages {
+			for _, ext := range langmap.ExtensionsFor(lang) {
+				pattern := "**/*" + ext
+				if !seen[pattern] {
+					seen[pattern] = true
+					globs = append(globs, pattern)
+				}
+			}
+		}
+		sort.Strings(globs)
+		d.globs = globs
+	}
+}
+
 // NewASTGrep builds an ast-grep detector for a species and its rule file. The
 // rule file is the species' detect.yml (TECHSPEC §6.1). The binary is not
 // probed until Detect runs.
@@ -122,6 +158,13 @@ func (d *astgrepDetector) Detect(ctx context.Context, scope engine.Scope) ([]eng
 // per line, but we request the default array form for a single decode.
 func (d *astgrepDetector) buildArgs(scope engine.Scope) []string {
 	args := []string{"scan", "--rule", d.rule, "--json"}
+	// Scope to the species' declared languages (Sprint 026): one `--globs` include
+	// pattern per registered extension, so ast-grep skips unrelated trees
+	// (vendor/, node_modules/) instead of walking the whole tree. Empty globs =
+	// unscoped (unchanged behavior).
+	for _, g := range d.globs {
+		args = append(args, "--globs", g)
+	}
 	targets := scope.Paths
 	if len(targets) == 0 && scope.Root != "" {
 		targets = []string{scope.Root}

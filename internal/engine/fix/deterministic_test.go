@@ -205,6 +205,85 @@ func TestDeterministicRewriteMissingInputs(t *testing.T) {
 	}
 }
 
+// TestDeterministicReplaceMatch covers the replace-match transform: the whole
+// multi-line matched span (SourceLines, ast-grep `lines`) is REPLACED by the
+// multi-line ast-grep `fix:` output (Replacement). This is the structural
+// flatten the redundant-else species needs — the prior delete-match (leaves
+// dangling code) and single-line rewrite (rejects multi-line) cannot express it.
+// The `-` lines are the verbatim source so they byte-match the working tree; the
+// `+` lines are the replacement (indentation is later normalized by the
+// language's formatter, and the change is proven by the compile gate).
+func TestDeterministicReplaceMatch(t *testing.T) {
+	fixer := fix.NewDeterministic(fix.TransformReplaceMatch)
+
+	// The verbatim matched span: an if/else whose if-branch returns. The
+	// replacement flattens it to a guard clause (drop else, dedent body).
+	src := "\tif n < 0 {\n\t\treturn \"neg\"\n\t} else {\n\t\treturn \"pos\"\n\t}"
+	repl := "if n < 0 {\n\t\treturn \"neg\"\n}\nreturn \"pos\""
+	task := engine.FixTask{
+		Finding: engine.Finding{
+			Species:     "redundant-else",
+			File:        "classify.go",
+			Span:        engine.Span{StartLine: 6, EndLine: 10},
+			SourceLines: src,
+			Replacement: repl,
+		},
+		Context: engine.CodeContext{
+			File:        "classify.go",
+			Span:        engine.Span{StartLine: 6, EndLine: 10},
+			SourceLines: src,
+			Replacement: repl,
+		},
+	}
+
+	diff, err := fixer.Fix(context.Background(), task)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	wantPatch := "--- a/classify.go\n" +
+		"+++ b/classify.go\n" +
+		"@@ -6,5 +6,4 @@\n" +
+		"-\tif n < 0 {\n" +
+		"-\t\treturn \"neg\"\n" +
+		"-\t} else {\n" +
+		"-\t\treturn \"pos\"\n" +
+		"-\t}\n" +
+		"+if n < 0 {\n" +
+		"+\t\treturn \"neg\"\n" +
+		"+}\n" +
+		"+return \"pos\"\n"
+	if got := diff.Files[0].Patch; got != wantPatch {
+		t.Errorf("replace-match patch mismatch:\n got:\n%q\nwant:\n%q", got, wantPatch)
+	}
+	if diff.Fixer != "deterministic (replace-match)" {
+		t.Errorf("provenance: got %q, want %q", diff.Fixer, "deterministic (replace-match)")
+	}
+}
+
+// TestDeterministicReplaceMatchMissingInputs asserts replace-match rejects a
+// missing SourceLines or Replacement with a clean per-ant error (which the
+// colony turns into a skip) rather than emitting a malformed patch.
+func TestDeterministicReplaceMatchMissingInputs(t *testing.T) {
+	fixer := fix.NewDeterministic(fix.TransformReplaceMatch)
+	cases := map[string]engine.FixTask{
+		"no source lines": {
+			Finding: engine.Finding{File: "a.go", Span: engine.Span{StartLine: 1}, Replacement: "x"},
+			Context: engine.CodeContext{File: "a.go", Replacement: "x"},
+		},
+		"no replacement": {
+			Finding: engine.Finding{File: "a.go", Span: engine.Span{StartLine: 1}, SourceLines: "a\nb"},
+			Context: engine.CodeContext{File: "a.go", SourceLines: "a\nb"},
+		},
+	}
+	for name, task := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := fixer.Fix(context.Background(), task); err == nil {
+				t.Errorf("expected an error for %q", name)
+			}
+		})
+	}
+}
+
 // TestDeterministicNoNetwork proves the fixer is pure: a fake transport that
 // fails any HTTP attempt is installed as the default, and a successful Fix shows
 // the deterministic path never dialed it. (No http import in the fixer means no

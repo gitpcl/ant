@@ -65,6 +65,23 @@ func cases() []fixture.Case {
 			GoldenPath: filepath.Join("testdata", "unreachable-code", "fix.golden"),
 		},
 		{
+			// redundant-else (species-cleanup): the STRUCTURAL flatten species. Its
+			// detect.yml matches an `if … else { … }` whose if-branch ends in a
+			// trailing `return` (a provably-terminating branch), and the deterministic
+			// `replace-match` transform swaps the whole multi-line span for the
+			// ast-grep `fix:` output with the `else` dropped (guard-clause flattening).
+			// The Go fixture makes the `compile` gate run a REAL `go build`, so the
+			// flatten is proven semantics-preserving (a broken flatten would fail the
+			// build); `detector-clears` proves the `if … else` shape is gone. The
+			// fixture repo also carries a non-terminating-else and an else-if chain that
+			// the rule deliberately leaves alone (asserted by detector match count == 1
+			// inside RunCase, which fails if the rule over-matches).
+			Name:       "redundant-else",
+			SpeciesDir: filepath.Join(speciesRoot, "redundant-else"),
+			RepoDir:    filepath.Join("testdata", "redundant-else", "repo"),
+			GoldenPath: filepath.Join("testdata", "redundant-else", "fix.golden"),
+		},
+		{
 			// empty-block, duplicate-condition, redundant-nil-check, and
 			// ineffective-assignment are PROPOSE-ONLY species (auto_apply = false).
 			// The fixture harness asserts the detect→fix→verify→golden pipeline (the
@@ -337,19 +354,21 @@ func cases() []fixture.Case {
 			),
 		},
 		{
-			// laravel-dd-dump-debug (Sprint 023 PHP wave): templated on Go's
-			// trailing-debug-code. The ast-grep PHP detector nominates the standalone
-			// `dd($id);` debug statement (the chained `ray($id)->blue()` is correctly
-			// NOT matched). The deterministic delete-match fix removes the verbatim
-			// line; the gate is detector-clears + command:verify.sh (php -l over the
-			// scratch tree) — NO compile/tests:affected (vacuous Go-build pass on a
-			// non-Go repo, sprint-023 contract). RequiredTools=["php"] skips the case
-			// when php is absent, exactly as ast-grep species skip without the matcher.
-			Name:          "laravel-dd-dump-debug",
-			SpeciesDir:    filepath.Join(speciesRoot, "laravel-dd-dump-debug"),
-			RepoDir:       filepath.Join("testdata", "laravel-dd-dump-debug", "repo"),
-			GoldenPath:    filepath.Join("testdata", "laravel-dd-dump-debug", "fix.golden"),
-			RequiredTools: []string{"php"},
+			// laravel-dd-dump-debug (Sprint 023 PHP wave; MIGRATED in Sprint 026): the
+			// ast-grep PHP detector nominates the standalone `dd($id);` debug statement
+			// (the chained `ray($id)->blue()` is correctly NOT matched). The
+			// deterministic delete-match fix removes the verbatim line; the gate is now
+			// detector-clears + the per-language `compile` verifier (Sprint 026), which
+			// runs `php -l` over the changed PHP — replacing the species' old bespoke
+			// command:verify.sh workaround. NO RequiredTools: the new compile gate
+			// clean-SKIPS when php is absent (honest skip, CI stays green) instead of
+			// the species having to declare a php prerequisite. This entry proves the
+			// command:verify.sh → compile upgrade path still produces the golden diff
+			// and passes the gate.
+			Name:       "laravel-dd-dump-debug",
+			SpeciesDir: filepath.Join(speciesRoot, "laravel-dd-dump-debug"),
+			RepoDir:    filepath.Join("testdata", "laravel-dd-dump-debug", "repo"),
+			GoldenPath: filepath.Join("testdata", "laravel-dd-dump-debug", "fix.golden"),
 		},
 		{
 			// laravel-env-call (Sprint 023 PHP wave): templated on n+1-query. The
@@ -1400,6 +1419,22 @@ func TestReportOnlyFixtureSpecies(t *testing.T) {
 // ast-grep is not installed every case skips (detection is a plugin boundary,
 // TECHSPEC §2), so the suite stays green without the binary while proving genuine
 // end-to-end behavior where it is present.
+// TestRedundantElse drives the redundant-else structural-flatten species through
+// the FULL detect→fix→verify→golden harness on its own. It is the named entry the
+// feature's verification step runs (`go test ./species/... -run RedundantElse`).
+// RunCase fails if the rule produces anything other than the one intended finding
+// (the non-terminating-else and else-if cases in the fixture must be left alone),
+// if the replace-match flatten does not byte-match the golden, or if the verifier
+// gate (real `go build` compile + detector-clears) rejects the flattened diff.
+func TestRedundantElse(t *testing.T) {
+	fixture.RunCase(t, fixture.Case{
+		Name:       "redundant-else",
+		SpeciesDir: filepath.Join(speciesRoot, "redundant-else"),
+		RepoDir:    filepath.Join("testdata", "redundant-else", "repo"),
+		GoldenPath: filepath.Join("testdata", "redundant-else", "fix.golden"),
+	})
+}
+
 func TestBuiltinSpeciesFixtures(t *testing.T) {
 	for _, c := range cases() {
 		c := c

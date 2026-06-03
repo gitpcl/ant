@@ -26,13 +26,27 @@ const (
 	// It backs species whose fix is a localized substitution rather than a
 	// deletion (e.g. redundant-conversion: `int(x)` → `x`). The replacement is
 	// spliced into the verbatim source line at the match's columns, so indentation
-	// and surrounding code on the line are preserved.
+	// and surrounding code on the line are preserved. It is single-line only.
 	TransformRewrite = "rewrite"
+
+	// TransformReplaceMatch replaces the ENTIRE matched span — including a
+	// MULTI-LINE span — with the detector rule's ast-grep `fix:` output
+	// (Finding.Replacement). Unlike `rewrite` (a single-line, column-bounded
+	// splice that preserves the rest of the line) and `delete-match` (a pure
+	// deletion), it swaps the whole verbatim span (SourceLines) for the whole
+	// replacement, so it can express a STRUCTURAL rewrite such as guard-clause
+	// flattening (redundant-else: `if c { return } else { X }` → `if c { return }`
+	// then `X`). The `-` lines are the verbatim source (they byte-match the working
+	// tree); the `+` lines are the replacement verbatim. ast-grep does not re-indent
+	// its `$$$`-spliced output, so the replacement's indentation may be imperfect;
+	// that is intentionally left to the language's formatter, and the change is
+	// proven semantics-preserving by the `compile` gate, not by cosmetic exactness.
+	TransformReplaceMatch = "replace-match"
 )
 
 // supportedTransforms lists the transforms for the unknown-transform error so a
 // misconfigured species sees every option it could have meant.
-var supportedTransforms = strings.Join([]string{TransformDeleteMatch, TransformRewrite}, ", ")
+var supportedTransforms = strings.Join([]string{TransformDeleteMatch, TransformRewrite, TransformReplaceMatch}, ", ")
 
 // deterministicFixer is a Fixer that applies a named code transform with NO
 // network and NO model call (TECHSPEC §5.2). It derives the diff from the
@@ -72,6 +86,8 @@ func (f *deterministicFixer) Fix(_ context.Context, task engine.FixTask) (engine
 		return f.deleteMatch(task)
 	case TransformRewrite:
 		return f.rewrite(task)
+	case TransformReplaceMatch:
+		return f.replaceMatch(task)
 	default:
 		return engine.ProposedDiff{}, fmt.Errorf("fix: deterministic transform %q is not supported (known: %s)", f.transform, supportedTransforms)
 	}
@@ -163,6 +179,49 @@ func (f *deterministicFixer) rewrite(task engine.FixTask) (engine.ProposedDiff, 
 	}, nil
 }
 
+// replaceMatch builds a unified-diff patch that replaces the ENTIRE matched span
+// with the rule's `fix:` output. It deletes every verbatim source line
+// (SourceLines, which byte-match the working tree) and adds every replacement
+// line in their place — a multi-line N-old / M-new hunk. This is the structural
+// transform behind redundant-else (guard-clause flattening): ast-grep matches
+// the whole `if … else { … }`, its `fix:` re-emits the body without the else
+// wrapper, and this transform swaps the span. Indentation in the replacement is
+// left for the language formatter; the `compile` verifier proves the result is
+// semantics-preserving (a flatten that broke control flow would fail to build).
+func (f *deterministicFixer) replaceMatch(task engine.FixTask) (engine.ProposedDiff, error) {
+	path, err := taskPath(task)
+	if err != nil {
+		return engine.ProposedDiff{}, err
+	}
+
+	src := task.Context.SourceLines
+	if src == "" {
+		src = task.Finding.SourceLines
+	}
+	if src == "" {
+		return engine.ProposedDiff{}, fmt.Errorf("fix: replace-match needs the verbatim source line(s) (SourceLines) on the finding/context for %s", path)
+	}
+
+	replacement := task.Context.Replacement
+	if replacement == "" {
+		replacement = task.Finding.Replacement
+	}
+	if replacement == "" {
+		return engine.ProposedDiff{}, fmt.Errorf("fix: replace-match needs a Replacement (the detector rule's ast-grep fix: output) for %s", path)
+	}
+
+	oldLines := splitLines(src)
+	newLines := splitLines(replacement)
+	startLine := startLineOf(task)
+	patch := unifiedReplaceSpan(path, startLine, oldLines, newLines)
+
+	return engine.ProposedDiff{
+		Files:     []engine.FileDiff{{Path: path, Patch: patch}},
+		Fixer:     fmt.Sprintf("deterministic (%s)", f.transform),
+		Rationale: fmt.Sprintf("replace-match replaced a %d-line span with %d line(s) at %s:%d (no model involved)", len(oldLines), len(newLines), path, startLine),
+	}, nil
+}
+
 // taskPath resolves the file path from the context, falling back to the finding.
 func taskPath(task engine.FixTask) (string, error) {
 	path := task.Context.File
@@ -224,6 +283,25 @@ func unifiedDelete(path string, startLine int, lines []string) string {
 	fmt.Fprintf(&b, "@@ -%d,%d +%d,0 @@\n", startLine, len(lines), startLine)
 	for _, ln := range lines {
 		fmt.Fprintf(&b, "-%s\n", ln)
+	}
+	return b.String()
+}
+
+// unifiedReplaceSpan renders a unified-diff patch that replaces the oldLines span
+// (starting at startLine) with newLines — an N-old / M-new hunk. The `-` lines
+// are the verbatim source lines so applyUnifiedPatch's exact-match check passes;
+// the `+` lines are the replacement. Used by the replace-match transform for a
+// multi-line structural rewrite (e.g. redundant-else flatten).
+func unifiedReplaceSpan(path string, startLine int, oldLines, newLines []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "--- a/%s\n", path)
+	fmt.Fprintf(&b, "+++ b/%s\n", path)
+	fmt.Fprintf(&b, "@@ -%d,%d +%d,%d @@\n", startLine, len(oldLines), startLine, len(newLines))
+	for _, ln := range oldLines {
+		fmt.Fprintf(&b, "-%s\n", ln)
+	}
+	for _, ln := range newLines {
+		fmt.Fprintf(&b, "+%s\n", ln)
 	}
 	return b.String()
 }

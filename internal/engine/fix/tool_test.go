@@ -90,7 +90,7 @@ func TestTool_CapturesDiffWithProvenance(t *testing.T) {
 	// content — prove it through the SAME apply machinery the verifiers use, so the
 	// whole-file diff dialect is genuinely consumable downstream.
 	scope := engine.Scope{Root: "."}
-	res := verify.NewCompile(func(context.Context, string) ([]byte, error) { return nil, nil }).
+	res := verify.NewCompileFor(func(context.Context, string) ([]byte, error) { return nil, nil }).
 		Verify(context.Background(), diff, scope)
 	if !res.Passed {
 		t.Fatalf("the tool diff did not apply cleanly to a scratch tree: %v", res.Checks)

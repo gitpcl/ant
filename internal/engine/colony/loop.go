@@ -18,6 +18,7 @@ import (
 
 	"github.com/gitpcl/ant/internal/engine"
 	"github.com/gitpcl/ant/internal/engine/events"
+	"github.com/gitpcl/ant/internal/engine/langmap"
 	"github.com/gitpcl/ant/internal/engine/stage"
 )
 
@@ -271,9 +272,14 @@ func buildFixTask(f engine.Finding) engine.FixTask {
 	return engine.FixTask{
 		Finding: f,
 		Context: engine.CodeContext{
-			File:    f.File,
-			Span:    f.Span,
-			Snippet: f.Snippet,
+			File: f.File,
+			// Language is resolved from the file extension via the single langmap
+			// authority (Sprint 026), so an LLM fix prompt carries the language the
+			// fix is in (richer context, no behavior change beyond the prompt). It is
+			// langmap.Unknown for an unrecognized extension — never guessed.
+			Language: langmap.LanguageForPath(f.File),
+			Span:     f.Span,
+			Snippet:  f.Snippet,
 			// Carry the verbatim source line(s) and any rewrite suggestion so the
 			// deterministic fixer patches lines that byte-match the working tree
 			// (indented delete-match) and can build a rewrite hunk (old span → new

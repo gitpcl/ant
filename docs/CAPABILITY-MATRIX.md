@@ -79,6 +79,7 @@ A `yes` cell means the capability applies; `-` means it does not.
 | `python-debug-print` | yes | - | ast-grep | - | - |
 | `python-sql-fstring` | yes | - | ast-grep | yes | - |
 | `redundant-conversion` | yes | - | ast-grep | - | - |
+| `redundant-else` | yes | - | ast-grep | - | - |
 | `redundant-nil-check` | yes | - | ast-grep | - | - |
 | `resource-leak` | yes | - | ast-grep | yes | - |
 | `ruff-autofix` | - | yes | ruff | - | - |
@@ -98,3 +99,25 @@ A `yes` cell means the capability applies; `-` means it does not.
 | `vue-reactivity-misuse` | - | yes | - | yes | - |
 | `vue-v-html-xss` | - | yes | - | yes | - |
 <!-- END GENERATED CAPABILITY MATRIX -->
+
+## Per-language verifier gate matrix
+
+The built-in `compile` and `tests:affected` verifiers are **per-language**
+(Sprint 026). They resolve a diff's language from file extension via the single
+`internal/engine/langmap` authority — the same map that scopes detection — and
+dispatch to the matching checker below. A language with no row is an **honest
+skip with a reason**, never a vacuous pass; a supported language whose toolchain
+binary is absent is a **clean skip** (CI without that toolchain stays green).
+
+| Language | `compile` | `tests:affected` |
+|---|---|---|
+| Go | `go build ./...` | `go test` (coverage-map → import-graph → package-fallback) |
+| TypeScript (`.ts`/`.tsx`) | `tsc --noEmit` | `vitest run` (co-located `*.test.ts`/`*.spec.ts`) |
+| JavaScript (`.js`/`.jsx`) | — (typecheck via TS) | `vitest run` (co-located `*.test.js`/`*.spec.js`) |
+| Vue (`.vue`) | `vue-tsc --noEmit` | — |
+| PHP (`.php`) | `php -l` per changed file | `phpunit` (co-located `*Test.php`) |
+| Python (`.py`) | `python -m py_compile` | `pytest` (co-located `test_*.py`) |
+| any other | honest skip: `no compile checker for <lang>` | honest skip: `no test runner for <lang>` |
+
+Adding a language is one row in `langmap` plus one builder/runner entry in the
+`compile` `BuildTable` and the `tests:affected` runner table — no engine changes.

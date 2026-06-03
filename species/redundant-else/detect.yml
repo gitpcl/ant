@@ -1,0 +1,50 @@
+# Detector rule for the redundant-else species (deterministic structural flatten,
+# species-cleanup wave; auto_apply).
+#
+# THE PROBLEM ast-grep CANNOT solve on its own: "is this else redundant?" depends
+# on whether the if-branch ALWAYS terminates (return/panic/break/continue), which
+# is a control-flow property. ast-grep is a purely SYNTACTIC matcher (TECHSPEC §2)
+# with no control-flow analysis, so a naive `has: return (stopBy: end)` over the
+# consequence over-matches — a `return` nested inside an inner `if` does not make
+# the branch terminate (it can still fall through).
+#
+# THE SAFE SYNTACTIC PROXY used here: the pattern requires the if-branch to END in
+# a `return` as its LAST statement — `{ $$$THEN; return $RET }`. A block whose
+# final statement is a bare return is GUARANTEED to terminate, so the trailing
+# else is genuinely redundant and flattening it preserves semantics. This is a
+# conservative match: it fires only on the provably-safe shape and never on a
+# conditional/fall-through consequence. It also naturally excludes `else if`
+# chains (the alternative there is an if_statement, not the `{ $$$ELSE }` block).
+#
+# THE FIX (`replace-match` transform, NOT delete-match or rewrite): ast-grep
+# matches the WHOLE `if … else { … }` span and its `fix:` re-emits the body with
+# the `else` wrapper removed and the if-branch left intact — a guard clause. The
+# deterministic `replace-match` transform swaps the verbatim multi-line span
+# (ast-grep `lines` -> Finding.SourceLines) for this multi-line replacement.
+# ast-grep does NOT re-indent its `$$$`-spliced output, so the emitted indentation
+# is approximate; that is deliberately left to `gofmt`, and CORRECTNESS is proven
+# by the `compile` gate (a flatten that broke control flow would fail `go build`)
+# plus `detector-clears` (the `if … else` shape is gone after the rewrite).
+#
+# Language is Go: the trailing-return pattern is matched structurally (no marker),
+# so unlike the TS-only marker species (unreachable-code, redundant-conversion)
+# this is a genuine Go rule, which makes the `compile` gate run a REAL `go build`
+# over the fixture — a non-vacuous safety proof.
+id: redundant-else-go
+language: go
+severity: warning
+message: 'else after a terminating if-branch is redundant; flatten it to a guard clause'
+rule:
+  pattern: |
+    if $COND {
+      $$$THEN
+      return $RET
+    } else {
+      $$$ELSE
+    }
+fix: |-
+  if $COND {
+  	$$$THEN
+  	return $RET
+  }
+  $$$ELSE

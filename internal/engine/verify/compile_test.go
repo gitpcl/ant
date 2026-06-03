@@ -130,7 +130,7 @@ func TestCompileNeverMutatesRealTree(t *testing.T) {
 	fakeBuild := func(context.Context, string) ([]byte, error) {
 		return []byte("build error: broken"), fmt.Errorf("exit status 1")
 	}
-	v := verify.NewCompile(fakeBuild)
+	v := verify.NewCompileFor(fakeBuild)
 	res := v.Verify(context.Background(), diff, engine.Scope{Root: root})
 	if res.Passed {
 		t.Fatal("fake build reports failure; verifier should fail")
@@ -159,7 +159,7 @@ func TestCompileScratchPrepFailureIsSkipNotPanic(t *testing.T) {
 		Files: []engine.FileDiff{{Path: "main.go", Patch: bad}},
 		Fixer: "test",
 	}
-	v := verify.NewCompile(func(context.Context, string) ([]byte, error) { return nil, nil })
+	v := verify.NewCompileFor(func(context.Context, string) ([]byte, error) { return nil, nil })
 	res := v.Verify(context.Background(), diff, engine.Scope{Root: root})
 	if res.Passed {
 		t.Fatal("a malformed patch must fail (not pass, not panic)")
